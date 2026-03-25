@@ -8,6 +8,7 @@ import { CmsModule } from './modules/cms/cms.module';
 import { AttendanceModule } from './modules/attendance/attendance.module';
 import { SettingsModule } from './modules/settings/settings.module';
 import { LeavesModule } from './modules/leaves/leaves.module';
+import { BonusesModule } from './modules/bonuses/bonuses.module';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 
@@ -25,6 +26,7 @@ import { AppService } from './app.service';
     AttendanceModule,
     SettingsModule,
     LeavesModule,
+    BonusesModule,
   ],
   controllers: [AppController],
   providers: [AppService],
