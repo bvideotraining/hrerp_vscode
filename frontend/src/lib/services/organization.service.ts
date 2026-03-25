@@ -3,16 +3,13 @@
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3003';
 
 function getAuthHeaders(): Record<string, string> {
-  const token = typeof window !== 'undefined' ? localStorage.getItem('jwtToken') : null;
-  return {
-    'Content-Type': 'application/json',
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-  };
+  return { 'Content-Type': 'application/json' };
 }
 
 async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
   const response = await fetch(`${API_URL}${path}`, {
     ...options,
+    credentials: 'include',
     headers: { ...getAuthHeaders(), ...options?.headers },
   });
   if (!response.ok) {
@@ -32,21 +29,20 @@ export interface Branding {
 
 export interface Branch {
   id?: string;
+  code: string;
   name: string;
-  address?: string;
-  phone?: string;
-  email?: string;
-  isActive?: boolean;
 }
 
 export interface Department {
   id?: string;
+  code: string;
   name: string;
   type: 'operation' | 'non-operation';
 }
 
 export interface JobTitle {
   id?: string;
+  code: string;
   name: string;
   department: string;
   category: string;

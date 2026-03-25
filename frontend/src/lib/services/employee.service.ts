@@ -6,16 +6,13 @@ import { Employee, EmployeeListFilters } from '@/types/employee';
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3003';
 
 function getAuthHeaders(): Record<string, string> {
-  const token = typeof window !== 'undefined' ? localStorage.getItem('jwtToken') : null;
-  return {
-    'Content-Type': 'application/json',
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-  };
+  return { 'Content-Type': 'application/json' };
 }
 
 async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
   const response = await fetch(`${API_URL}${path}`, {
     ...options,
+    credentials: 'include',
     headers: { ...getAuthHeaders(), ...options?.headers },
   });
   if (!response.ok) {
@@ -60,6 +57,44 @@ class EmployeeService {
       method: 'PUT',
       body: JSON.stringify(updateData),
     });
+  }
+
+  async updateEmployeeDocuments(employeeId: string, documents: any[]): Promise<void> {
+    await apiFetch(`/api/employees/${encodeURIComponent(employeeId)}/documents`, {
+      method: 'PUT',
+      body: JSON.stringify({ documents }),
+    });
+  }
+
+  async uploadProfilePhoto(file: File): Promise<string> {
+    const formData = new FormData();
+    formData.append('file', file);
+    const response = await fetch(`${API_URL}/api/employees/upload-photo`, {
+      method: 'POST',
+      credentials: 'include',
+      body: formData,
+    });
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}));
+      throw new Error(body.message || `Photo upload failed ${response.status}`);
+    }
+    const result = await response.json();
+    return result.url;
+  }
+
+  async uploadEmployeeDocument(employeeId: string, file: File): Promise<{ url: string; originalName: string }> {
+    const formData = new FormData();
+    formData.append('file', file);
+    const response = await fetch(`${API_URL}/api/employees/${encodeURIComponent(employeeId)}/upload`, {
+      method: 'POST',
+      credentials: 'include',
+      body: formData,
+    });
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}));
+      throw new Error(body.message || `Upload failed ${response.status}`);
+    }
+    return response.json();
   }
 
   async deleteEmployee(employeeId: string): Promise<void> {

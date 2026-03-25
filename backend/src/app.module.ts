@@ -4,6 +4,10 @@ import { FirebaseModule } from './config/firebase/firebase.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { EmployeesModule } from './modules/employees/employees.module';
 import { OrganizationModule } from './modules/organization/organization.module';
+import { CmsModule } from './modules/cms/cms.module';
+import { AttendanceModule } from './modules/attendance/attendance.module';
+import { SettingsModule } from './modules/settings/settings.module';
+import { LeavesModule } from './modules/leaves/leaves.module';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 
@@ -17,6 +21,10 @@ import { AppService } from './app.service';
     AuthModule,
     EmployeesModule,
     OrganizationModule,
+    CmsModule,
+    AttendanceModule,
+    SettingsModule,
+    LeavesModule,
   ],
   controllers: [AppController],
   providers: [AppService],

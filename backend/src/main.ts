@@ -10,11 +10,17 @@ import { HttpExceptionFilter } from './modules/common/filters/http-exception.fil
 dotenv.config();
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  // Disable the built-in body parser so our custom size-limited parsers run instead
+  const app = await NestFactory.create(AppModule, { bodyParser: false });
+
+  // Increase body size limit for base64 image/document uploads
+  app.use(require('express').json({ limit: '10mb' }));
+  app.use(require('express').urlencoded({ limit: '10mb', extended: true }));
+  app.use(require('cookie-parser')());
 
   // Global middleware
   app.enableCors({
-    origin: true,
+    origin: process.env.FRONTEND_URL || 'http://localhost:3000',
     credentials: true,
   });
 
@@ -22,7 +28,8 @@ async function bootstrap() {
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
-      forbidNonWhitelisted: true,
+      // forbidNonWhitelisted removed — it silently blocks fields not in DTO
+      // (e.g. documents array was being stripped, causing Firestore to keep old data)
       transform: true,
       transformOptions: {
         enableImplicitConversion: true,

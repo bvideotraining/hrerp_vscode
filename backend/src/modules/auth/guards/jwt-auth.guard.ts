@@ -7,20 +7,33 @@ export class JwtAuthGuard implements CanActivate {
 
   canActivate(context: ExecutionContext): boolean {
     const request = context.switchToHttp().getRequest();
-    const authHeader = request.headers['authorization'];
 
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      throw new UnauthorizedException('Missing or invalid Authorization header');
+    // 1. Prefer HTTP-only cookie
+    let token: string | undefined = request.cookies?.jwtToken;
+
+    // 2. Fall back to Authorization: Bearer header (e.g. Swagger / API clients)
+    if (!token) {
+      const authHeader: string | undefined = request.headers['authorization'];
+      if (authHeader?.startsWith('Bearer ')) {
+        token = authHeader.substring(7);
+      }
     }
 
-    const token = authHeader.substring(7);
+    if (!token) {
+      throw new UnauthorizedException('Authentication required');
+    }
 
     try {
       const payload = this.jwtService.verify(token);
+      // Expose all JWT claims on req.user so controllers can read them
       request.user = {
-        id: payload.sub,
-        email: payload.email,
-        role: payload.role,
+        sub:         payload.sub,
+        id:          payload.sub,
+        email:       payload.email,
+        role:        payload.role,
+        accessType:  payload.accessType,
+        employeeId:  payload.employeeId,
+        employeeCode: payload.employeeCode,
       };
       return true;
     } catch {

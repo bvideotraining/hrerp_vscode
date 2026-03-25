@@ -5,12 +5,23 @@ import { organizationService, Branch } from '@/lib/services/organization.service
 import { Plus, Pencil, Trash2, X, Check } from 'lucide-react';
 
 const EMPTY_FORM: Omit<Branch, 'id'> = {
+  code: '',
   name: '',
-  address: '',
-  phone: '',
-  email: '',
-  isActive: true,
 };
+
+function generateNextCode(existingCodes: string[], defaultPrefix: string): string {
+  let maxNum = 0;
+  let prefix = `${defaultPrefix}-`;
+  let numDigits = 3;
+  for (const code of existingCodes) {
+    const match = code.match(/^(.*?)(\d+)$/);
+    if (match) {
+      const num = parseInt(match[2], 10);
+      if (num > maxNum) { maxNum = num; prefix = match[1]; numDigits = match[2].length; }
+    }
+  }
+  return `${prefix}${String(maxNum + 1).padStart(numDigits, '0')}`;
+}
 
 export function BranchesTab() {
   const [branches, setBranches] = useState<Branch[]>([]);
@@ -39,11 +50,16 @@ export function BranchesTab() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { load(); }, []);
 
-  const openAdd = () => { setForm(EMPTY_FORM); setModal({ open: true, mode: 'add', item: null }); };
-  const openEdit = (item: Branch) => { setForm({ name: item.name, address: item.address || '', phone: item.phone || '', email: item.email || '', isActive: item.isActive ?? true }); setModal({ open: true, mode: 'edit', item }); };
+  const openAdd = () => {
+    const nextCode = generateNextCode(branches.map((b) => b.code).filter(Boolean), 'BR');
+    setForm({ ...EMPTY_FORM, code: nextCode });
+    setModal({ open: true, mode: 'add', item: null });
+  };
+  const openEdit = (item: Branch) => { setForm({ code: item.code, name: item.name }); setModal({ open: true, mode: 'edit', item }); };
   const closeModal = () => setModal({ open: false, mode: 'add', item: null });
 
   const handleSave = async () => {
+    if (!form.code.trim()) { showToast('error', 'Branch code is required'); return; }
     if (!form.name.trim()) { showToast('error', 'Branch name is required'); return; }
     setSaving(true);
     try {
@@ -101,26 +117,16 @@ export function BranchesTab() {
           <table className="w-full text-sm">
             <thead className="bg-slate-50 border-b border-slate-200">
               <tr>
+                <th className="text-left px-4 py-3 text-xs font-semibold text-slate-600 uppercase tracking-wider">Code</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-slate-600 uppercase tracking-wider">Name</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-slate-600 uppercase tracking-wider">Address</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-slate-600 uppercase tracking-wider">Phone</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-slate-600 uppercase tracking-wider">Status</th>
                 <th className="px-4 py-3"></th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {branches.map((b) => (
                 <tr key={b.id} className="hover:bg-slate-50">
+                  <td className="px-4 py-3 font-mono text-sm text-slate-600">{b.code}</td>
                   <td className="px-4 py-3 font-medium text-slate-900">{b.name}</td>
-                  <td className="px-4 py-3 text-slate-600">{b.address || '—'}</td>
-                  <td className="px-4 py-3 text-slate-600">{b.phone || '—'}</td>
-                  <td className="px-4 py-3">
-                    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
-                      b.isActive !== false ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-600'
-                    }`}>
-                      {b.isActive !== false ? 'Active' : 'Inactive'}
-                    </span>
-                  </td>
                   <td className="px-4 py-3">
                     <div className="flex items-center justify-end gap-2">
                       <button onClick={() => openEdit(b)} className="rounded p-1.5 hover:bg-slate-100 text-slate-500 transition-colors">
@@ -157,32 +163,14 @@ export function BranchesTab() {
             </div>
             <div className="space-y-3">
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Name <span className="text-red-500">*</span></label>
-                <input value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500" placeholder="Branch name" />
+                <label className="block text-sm font-medium text-slate-700 mb-1">Branch Code <span className="text-red-500">*</span></label>
+                <input value={form.code} onChange={(e) => setForm((f) => ({ ...f, code: e.target.value }))}
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500" placeholder="e.g. BR-001" />
               </div>
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Address</label>
-                <input value={form.address || ''} onChange={(e) => setForm((f) => ({ ...f, address: e.target.value }))}
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500" placeholder="Office address" />
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Phone</label>
-                  <input value={form.phone || ''} onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500" placeholder="+971 4 xxx xxxx" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Email</label>
-                  <input type="email" value={form.email || ''} onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500" placeholder="branch@company.com" />
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <input type="checkbox" id="isActive" checked={form.isActive !== false}
-                  onChange={(e) => setForm((f) => ({ ...f, isActive: e.target.checked }))}
-                  className="h-4 w-4 rounded border-slate-300 text-blue-600" />
-                <label htmlFor="isActive" className="text-sm text-slate-700">Active</label>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Branch Name <span className="text-red-500">*</span></label>
+                <input value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500" placeholder="Branch name" />
               </div>
             </div>
             <div className="mt-5 flex justify-end gap-2">

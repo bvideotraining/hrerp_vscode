@@ -1,6 +1,6 @@
 'use client';
 
-import { use, useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { EmployeeData, EmployeeFormData } from '@/types/employee';
 import { EmployeeForm } from '@/components/forms/employee-form';
@@ -9,14 +9,14 @@ import { useToast } from '@/hooks/use-toast';
 import { useEmployee } from '@/hooks/use-employee';
 
 interface EditEmployeePageProps {
-  params: Promise<{ id: string }>;
+  params: { id: string };
 }
 
 export default function EditEmployeePage({ params }: EditEmployeePageProps) {
-  const { id } = use(params);
+  const { id } = params;
   const router = useRouter();
   const { toasts, dismiss, success, error } = useToast();
-  const { getEmployee, updateEmployee, loading } = useEmployee();
+  const { getEmployee, updateEmployee, loading, error: updateError } = useEmployee();
   const [employee, setEmployee] = useState<EmployeeData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -47,7 +47,7 @@ export default function EditEmployeePage({ params }: EditEmployeePageProps) {
         router.push(`/dashboard/employees/${id}`);
       }, 1500);
     } else {
-      error('Failed to update employee. Please try again.');
+      error(`Failed to update employee. ${updateError || 'Please try again.'}`);
     }
   };
 

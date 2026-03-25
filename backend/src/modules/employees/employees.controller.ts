@@ -10,7 +10,10 @@ import {
   UseGuards,
   Request,
   HttpCode,
+  UseInterceptors,
+  UploadedFile,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { AuthGuard } from '@nestjs/passport';
 import { JwtAuthGuard } from '@modules/auth/guards/jwt-auth.guard';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
@@ -72,6 +75,18 @@ export class EmployeesController {
     return this.employeesService.findById(id);
   }
 
+  // NOTE: This route must be registered BEFORE @Put(':id') so NestJS does not
+  // treat 'upload-photo' as an employee ID.
+  @Post('upload-photo')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Upload a profile photo to Firebase Storage, returns URL' })
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 5 * 1024 * 1024 } }))
+  async uploadPhoto(
+    @UploadedFile() file: Express.Multer.File,
+  ) {
+    return this.employeesService.uploadPhoto(file);
+  }
+
   @Put(':id')
   @ApiOperation({ summary: 'Update employee' })
   async update(
@@ -80,6 +95,29 @@ export class EmployeesController {
     @Request() req: any
   ) {
     return this.employeesService.update(id, updateEmployeeDto, req.user.id);
+  }
+
+  @Put(':id/documents')
+  @ApiOperation({ summary: 'Update employee documents only — bypasses DTO whitelist' })
+  async updateDocuments(
+    @Param('id') id: string,
+    @Body() body: any,
+    @Request() req: any
+  ) {
+    const documents = Array.isArray(body.documents) ? body.documents : [];
+    return this.employeesService.updateDocuments(id, documents, req.user.id);
+  }
+
+  @Post(':id/upload')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Upload a document file to Firebase Storage, returns URL' })
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 10 * 1024 * 1024 } }))
+  async uploadDocument(
+    @Param('id') id: string,
+    @UploadedFile() file: Express.Multer.File,
+    @Request() req: any,
+  ) {
+    return this.employeesService.uploadDocument(id, file);
   }
 
   @Delete(':id')

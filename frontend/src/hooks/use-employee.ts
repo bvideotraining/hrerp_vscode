@@ -177,6 +177,24 @@ export function useEmployee() {
     setError(null);
   }, []);
 
+  const batchCreateEmployees = useCallback(
+    async (employees: any[]): Promise<boolean> => {
+      setLoading(true);
+      setError(null);
+      try {
+        await employeeService.batchCreateEmployees(employees);
+        return true;
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Failed to import employees';
+        setError(message);
+        return false;
+      } finally {
+        setLoading(false);
+      }
+    },
+    []
+  );
+
   return {
     loading,
     error,
@@ -186,6 +204,7 @@ export function useEmployee() {
     getEmployee,
     getAllEmployees,
     searchEmployees,
+    batchCreateEmployees,
     clearError,
   };
 }

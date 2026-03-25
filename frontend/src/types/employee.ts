@@ -64,7 +64,9 @@ export interface Employee {
 export interface EmployeeDocument {
   id: string;
   type: string;
-  file: string;
+  file: string;           // original filename for display
+  fileUrl?: string;       // Firebase Storage download URL (new uploads)
+  fileContent?: string;   // legacy base64 data URL (kept for backward compat)
   expiryDate?: string;
   receivedDate: string;
   notes?: string;

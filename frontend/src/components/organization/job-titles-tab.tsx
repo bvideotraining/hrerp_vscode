@@ -6,7 +6,21 @@ import { Plus, Pencil, Trash2, X, Check } from 'lucide-react';
 
 const CATEGORIES = ['WhiteCollar', 'BlueCollar', 'Management', 'PartTime'];
 
-const EMPTY_FORM: Omit<JobTitle, 'id'> = { name: '', department: '', category: 'WhiteCollar' };
+const EMPTY_FORM: Omit<JobTitle, 'id'> = { code: '', name: '', department: '', category: 'WhiteCollar' };
+
+function generateNextCode(existingCodes: string[], defaultPrefix: string): string {
+  let maxNum = 0;
+  let prefix = `${defaultPrefix}-`;
+  let numDigits = 3;
+  for (const code of existingCodes) {
+    const match = code.match(/^(.*?)(\d+)$/);
+    if (match) {
+      const num = parseInt(match[2], 10);
+      if (num > maxNum) { maxNum = num; prefix = match[1]; numDigits = match[2].length; }
+    }
+  }
+  return `${prefix}${String(maxNum + 1).padStart(numDigits, '0')}`;
+}
 
 export function JobTitlesTab() {
   const [items, setItems] = useState<JobTitle[]>([]);
@@ -45,17 +59,19 @@ export function JobTitlesTab() {
   useEffect(() => { load(); }, []);
 
   const openAdd = () => {
+    const nextCode = generateNextCode(items.map((j) => j.code).filter(Boolean), 'JT');
     const defaultDept = departments[0]?.name || '';
-    setForm({ ...EMPTY_FORM, department: defaultDept });
+    setForm({ ...EMPTY_FORM, code: nextCode, department: defaultDept });
     setModal({ open: true, mode: 'add', item: null });
   };
   const openEdit = (item: JobTitle) => {
-    setForm({ name: item.name, department: item.department, category: item.category });
+    setForm({ code: item.code, name: item.name, department: item.department, category: item.category });
     setModal({ open: true, mode: 'edit', item });
   };
   const closeModal = () => setModal({ open: false, mode: 'add', item: null });
 
   const handleSave = async () => {
+    if (!form.code.trim()) { showToast('error', 'Job title code is required'); return; }
     if (!form.name.trim()) { showToast('error', 'Job title name is required'); return; }
     if (!form.department) { showToast('error', 'Department is required'); return; }
     setSaving(true);
@@ -121,6 +137,7 @@ export function JobTitlesTab() {
           <table className="w-full text-sm">
             <thead className="bg-slate-50 border-b border-slate-200">
               <tr>
+                <th className="text-left px-4 py-3 text-xs font-semibold text-slate-600 uppercase tracking-wider">Code</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-slate-600 uppercase tracking-wider">Title</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-slate-600 uppercase tracking-wider">Department</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-slate-600 uppercase tracking-wider">Category</th>
@@ -130,6 +147,7 @@ export function JobTitlesTab() {
             <tbody className="divide-y divide-slate-100">
               {items.map((item) => (
                 <tr key={item.id} className="hover:bg-slate-50">
+                  <td className="px-4 py-3 font-mono text-sm text-slate-600">{item.code}</td>
                   <td className="px-4 py-3 font-medium text-slate-900">{item.name}</td>
                   <td className="px-4 py-3 text-slate-600">{item.department}</td>
                   <td className="px-4 py-3">
@@ -171,6 +189,11 @@ export function JobTitlesTab() {
               <button onClick={closeModal} className="rounded p-1 hover:bg-slate-100"><X className="h-5 w-5 text-slate-500" /></button>
             </div>
             <div className="space-y-3">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Code <span className="text-red-500">*</span></label>
+                <input value={form.code} onChange={(e) => setForm((f) => ({ ...f, code: e.target.value }))}
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500" placeholder="e.g. JT-001" />
+              </div>
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Title <span className="text-red-500">*</span></label>
                 <input value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}

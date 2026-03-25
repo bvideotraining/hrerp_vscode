@@ -1,20 +1,46 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { Branding } from '@/lib/services/organization.service';
 import { useBranding } from '@/context/branding-context';
-import { Save } from 'lucide-react';
+import { Save, Upload, X } from 'lucide-react';
+
+const MAX_LOGO_BYTES = 500 * 1024; // 500 KB — safe for Firestore document size
 
 export function BrandingTab() {
   const { appName, logoUrl, updateBranding } = useBranding();
   const [form, setForm] = useState<Branding>({ appName, logoUrl });
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const showToast = (type: 'success' | 'error', message: string) => {
     setToast({ type, message });
     setTimeout(() => setToast(null), 3000);
   };
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      showToast('error', 'Please select an image file');
+      return;
+    }
+    if (file.size > MAX_LOGO_BYTES) {
+      showToast('error', 'Image must be smaller than 500 KB');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const dataUrl = ev.target?.result as string;
+      setForm((f) => ({ ...f, logoUrl: dataUrl }));
+    };
+    reader.readAsDataURL(file);
+    // reset input so the same file can be re-selected if removed
+    e.target.value = '';
+  };
+
+  const handleRemoveLogo = () => setForm((f) => ({ ...f, logoUrl: '' }));
 
   const handleSave = async () => {
     if (!form.appName.trim()) {
@@ -61,15 +87,59 @@ export function BrandingTab() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Logo URL</label>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Logo</label>
+
+              {/* Hidden file input */}
               <input
-                type="url"
-                value={form.logoUrl || ''}
-                onChange={(e) => setForm((f) => ({ ...f, logoUrl: e.target.value }))}
-                placeholder="https://example.com/logo.png"
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={handleFileSelect}
               />
-              <p className="mt-1 text-xs text-slate-500">Leave empty to use the default icon</p>
+
+              {form.logoUrl ? (
+                /* Logo already selected — show preview with remove button */
+                <div className="flex items-center gap-3">
+                  <div className="h-16 w-16 rounded-lg border border-slate-200 bg-slate-50 overflow-hidden flex-shrink-0">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={form.logoUrl}
+                      alt="Logo preview"
+                      className="h-full w-full object-contain"
+                    />
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 transition-colors"
+                    >
+                      <Upload className="h-3.5 w-3.5" />
+                      Replace
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleRemoveLogo}
+                      className="flex items-center gap-1.5 rounded-lg border border-red-200 bg-white px-3 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50 transition-colors"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                      Remove
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                /* No logo — show upload drop zone */
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="w-full flex flex-col items-center gap-2 rounded-lg border-2 border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-sm text-slate-500 hover:border-blue-400 hover:bg-blue-50 hover:text-blue-600 transition-colors cursor-pointer"
+                >
+                  <Upload className="h-6 w-6" />
+                  <span className="font-medium">Click to upload logo</span>
+                  <span className="text-xs">PNG, JPG, SVG, WebP — max 500 KB</span>
+                </button>
+              )}
             </div>
           </div>
         </div>

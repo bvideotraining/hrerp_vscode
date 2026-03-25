@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, ConflictException } from '@nestjs/common';
 import { FirebaseService } from '@config/firebase/firebase.service';
 import { BrandingDto } from './dto/branding.dto';
 import { BranchDto } from './dto/branch.dto';
@@ -56,14 +56,18 @@ export class OrganizationService {
 
   async createBranch(dto: BranchDto) {
     const db = this.firebaseService.getFirestore();
+    const existing = await db.collection('branches').where('code', '==', dto.code).limit(1).get();
+    if (!existing.empty) throw new ConflictException(`Branch code '${dto.code}' already exists`);
     const ref = db.collection('branches').doc();
-    const data = { ...dto, isActive: dto.isActive !== false, createdAt: new Date(), updatedAt: new Date() };
+    const data = { ...dto, createdAt: new Date(), updatedAt: new Date() };
     await ref.set(data);
     return { id: ref.id, ...data };
   }
 
   async updateBranch(id: string, dto: BranchDto) {
     const db = this.firebaseService.getFirestore();
+    const existing = await db.collection('branches').where('code', '==', dto.code).limit(1).get();
+    if (!existing.empty && existing.docs[0].id !== id) throw new ConflictException(`Branch code '${dto.code}' already exists`);
     const data = { ...dto, updatedAt: new Date() };
     await db.collection('branches').doc(id).update(data);
     return { id, ...data };
@@ -85,6 +89,8 @@ export class OrganizationService {
 
   async createDepartment(dto: DepartmentDto) {
     const db = this.firebaseService.getFirestore();
+    const existing = await db.collection('departments').where('code', '==', dto.code).limit(1).get();
+    if (!existing.empty) throw new ConflictException(`Department code '${dto.code}' already exists`);
     const ref = db.collection('departments').doc();
     const data = { ...dto, createdAt: new Date(), updatedAt: new Date() };
     await ref.set(data);
@@ -93,6 +99,8 @@ export class OrganizationService {
 
   async updateDepartment(id: string, dto: DepartmentDto) {
     const db = this.firebaseService.getFirestore();
+    const existing = await db.collection('departments').where('code', '==', dto.code).limit(1).get();
+    if (!existing.empty && existing.docs[0].id !== id) throw new ConflictException(`Department code '${dto.code}' already exists`);
     const data = { ...dto, updatedAt: new Date() };
     await db.collection('departments').doc(id).update(data);
     return { id, ...data };
@@ -114,6 +122,8 @@ export class OrganizationService {
 
   async createJobTitle(dto: JobTitleDto) {
     const db = this.firebaseService.getFirestore();
+    const existing = await db.collection('job_titles').where('code', '==', dto.code).limit(1).get();
+    if (!existing.empty) throw new ConflictException(`Job title code '${dto.code}' already exists`);
     const ref = db.collection('job_titles').doc();
     const data = { ...dto, createdAt: new Date(), updatedAt: new Date() };
     await ref.set(data);
@@ -122,6 +132,8 @@ export class OrganizationService {
 
   async updateJobTitle(id: string, dto: JobTitleDto) {
     const db = this.firebaseService.getFirestore();
+    const existing = await db.collection('job_titles').where('code', '==', dto.code).limit(1).get();
+    if (!existing.empty && existing.docs[0].id !== id) throw new ConflictException(`Job title code '${dto.code}' already exists`);
     const data = { ...dto, updatedAt: new Date() };
     await db.collection('job_titles').doc(id).update(data);
     return { id, ...data };

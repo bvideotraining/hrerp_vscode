@@ -1,7 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Employee, EmployeeStatus, EmployeeCategory } from '@/types/employee';
+import { organizationService } from '@/lib/services/organization.service';
 import { Eye, Trash2, Edit2, Search } from 'lucide-react';
 
 interface EmployeeListProps {
@@ -19,6 +20,30 @@ export function EmployeeList({ employees, onEdit, onDelete, onView }: EmployeeLi
     status: '' as EmployeeStatus | '',
     category: '' as EmployeeCategory | ''
   });
+
+  // Dynamic org data for filters
+  const [orgBranches, setOrgBranches] = useState<string[]>([]);
+  const [orgDepartments, setOrgDepartments] = useState<string[]>([]);
+  useEffect(() => {
+    Promise.all([
+      organizationService.getBranches(),
+      organizationService.getDepartments(),
+    ]).then(([b, d]) => {
+      setOrgBranches(b.filter((x) => x.isActive !== false).map((x) => x.name));
+      setOrgDepartments(d.map((x) => x.name));
+    }).catch(() => {});
+  }, []);
+
+  // Merge org data with any unique values already in employee records
+  const branchOptions = useMemo(() => {
+    const fromEmployees = employees.map(e => e.branch).filter(Boolean);
+    return [...new Set([...orgBranches, ...fromEmployees])].sort();
+  }, [employees, orgBranches]);
+
+  const departmentOptions = useMemo(() => {
+    const fromEmployees = employees.map(e => e.department).filter(Boolean);
+    return [...new Set([...orgDepartments, ...fromEmployees])].sort();
+  }, [employees, orgDepartments]);
 
   const filteredEmployees = employees.filter(emp => {
     const matchesSearch =
@@ -71,10 +96,9 @@ export function EmployeeList({ employees, onEdit, onDelete, onView }: EmployeeLi
             className="rounded-lg border border-slate-300 px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
             <option value="">All Branches</option>
-            <option value="Dubai Main">Dubai Main</option>
-            <option value="Abu Dhabi">Abu Dhabi</option>
-            <option value="Sharjah">Sharjah</option>
-            <option value="Ajman">Ajman</option>
+            {branchOptions.map(b => (
+              <option key={b} value={b}>{b}</option>
+            ))}
           </select>
 
           <select
@@ -83,10 +107,9 @@ export function EmployeeList({ employees, onEdit, onDelete, onView }: EmployeeLi
             className="rounded-lg border border-slate-300 px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
             <option value="">All Departments</option>
-            <option value="HR">HR</option>
-            <option value="Finance">Finance</option>
-            <option value="Operations">Operations</option>
-            <option value="IT">IT</option>
+            {departmentOptions.map(d => (
+              <option key={d} value={d}>{d}</option>
+            ))}
           </select>
 
           <select
@@ -98,6 +121,8 @@ export function EmployeeList({ employees, onEdit, onDelete, onView }: EmployeeLi
             <option value="Active">Active</option>
             <option value="Inactive">Inactive</option>
             <option value="Resigned">Resigned</option>
+            <option value="On Leave">On Leave</option>
+            <option value="Retired">Retired</option>
           </select>
 
           <select
@@ -109,6 +134,7 @@ export function EmployeeList({ employees, onEdit, onDelete, onView }: EmployeeLi
             <option value="WhiteCollar">White Collar</option>
             <option value="BlueCollar">Blue Collar</option>
             <option value="Management">Management</option>
+            <option value="PartTime">Part Time</option>
           </select>
         </div>
       </div>

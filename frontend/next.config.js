@@ -4,7 +4,12 @@ const config = {
   swcMinify: true,
   eslint: { ignoreDuringBuilds: true },
   images: {
-    domains: [""],
+    remotePatterns: [
+      {
+        protocol: 'https',
+        hostname: 'firebasestorage.googleapis.com',
+      },
+    ],
   },
   env: {
     NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL,

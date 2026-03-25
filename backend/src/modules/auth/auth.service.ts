@@ -65,39 +65,211 @@ export class AuthService {
     const { email, password } = loginDto;
 
     try {
-      // Find user by email
+      // Find user by email — check both 'users' and 'systemUsers' collections
+      // IMPORTANT: systemUsers takes priority — it holds role assignments
       const db = this.firebaseService.getFirestore();
-      const userDoc = await db.collection('users').where('email', '==', email).get();
+      const [userDoc, systemUserDoc] = await Promise.all([
+        db.collection('users').where('email', '==', email).get(),
+        db.collection('systemUsers').where('email', '==', email).get(),
+      ]);
 
-      if (userDoc.empty) {
+      // Prefer systemUsers (has roleId + roleName) over generic users
+      const doc = !systemUserDoc.empty ? systemUserDoc.docs[0] : !userDoc.empty ? userDoc.docs[0] : null;
+
+      if (!doc) {
         throw new Error('User not found');
       }
 
-      const userData = userDoc.docs[0].data();
+      const userData = doc.data();
 
       // Verify password (TODO: Use bcryptjs.compare() in production)
       if (userData.password !== password) {
         throw new Error('Invalid password');
       }
 
+      // Resolve id — 'users' stores it in data.id, 'systemUsers' uses the doc id
+      const resolvedId = userData.id || doc.id;
+
+      // ── Role lookup ────────────────────────────────────────
+      let permissions: any[] = [];
+      let scopeType: string[] = [];
+      let roleId = userData.roleId || userData.role || '';
+      let accessType = 'custom'; // safe default; overridden if role is found
+
+      console.log(`[Auth] User doc fields: roleId="${userData.roleId}", roleName="${userData.roleName}", role="${userData.role}"`);
+
+      const rolesRef = db.collection('roles');
+      let roleDoc: any = null;
+
+      if (roleId) {
+        // 1. Try Firestore doc ID
+        const byId = await rolesRef.doc(roleId).get();
+        if (byId.exists) {
+          roleDoc = byId.data();
+          console.log(`[Auth] Role found by doc ID "${roleId}": accessType=${roleDoc.accessType}, permissions=${roleDoc.permissions?.length ?? 0}`);
+        } else {
+          // 2. Try by name field (handles case where roleId is actually a role name)
+          const byName = await rolesRef.where('name', '==', roleId).limit(1).get();
+          if (!byName.empty) {
+            roleDoc = byName.docs[0].data();
+            roleId = byName.docs[0].id;
+            console.log(`[Auth] Role found by name "${roleId}": accessType=${roleDoc.accessType}, permissions=${roleDoc.permissions?.length ?? 0}`);
+          }
+        }
+      }
+
+      // 3. Last resort: use the stored roleName field (handles stale/deleted role IDs)
+      if (!roleDoc && userData.roleName) {
+        const byRoleName = await rolesRef.where('name', '==', userData.roleName).limit(1).get();
+        if (!byRoleName.empty) {
+          roleDoc = byRoleName.docs[0].data();
+          roleId = byRoleName.docs[0].id;
+          console.log(`[Auth] Role found by roleName fallback "${userData.roleName}": accessType=${roleDoc.accessType}, permissions=${roleDoc.permissions?.length ?? 0}`);
+        }
+      }
+
+      if (roleDoc) {
+        permissions = roleDoc.permissions || [];
+        accessType = roleDoc.accessType || 'custom';
+        scopeType = roleDoc.scopeType || [];
+      } else {
+        console.warn(`[Auth] Role NOT found. roleId="${userData.roleId}", roleName="${userData.roleName}", role="${userData.role}" — no permissions granted`);
+      }
+
+      // ── Employee record lookup (to get employeeCode) ───────
+      let employeeId = userData.employeeId || '';
+      let employeeCode = userData.employeeCode || '';
+      if (employeeId && !employeeCode) {
+        try {
+          const empDoc = await db.collection('employees').doc(employeeId).get();
+          if (empDoc.exists) {
+            employeeCode = (empDoc.data() as any).employeeCode || '';
+            console.log(`[Auth] Employee code for employeeId="${employeeId}": "${employeeCode}"`);
+          }
+        } catch {
+          // non-critical — proceed without code
+        }
+      }
+
       // Generate JWT token
       const accessToken = this.jwtService.sign({
-        sub: userData.id,
+        sub: resolvedId,
         email: userData.email,
         role: userData.role,
+        accessType,
+        employeeId,
+        employeeCode,
       });
 
       return {
-        id: userData.id,
+        id: resolvedId,
         email: userData.email,
-        fullName: userData.fullName,
+        fullName: userData.fullName || userData.name || '',
         role: userData.role,
+        roleName: roleDoc?.name || userData.roleName || '',
+        roleId,
+        accessType,
+        permissions,
+        scopeType,
+        employeeId,
+        employeeCode,
         accessToken,
         tokenType: 'Bearer',
       };
     } catch (error) {
       throw error;
     }
+  }
+
+  async resetPassword(email: string, newPassword: string) {
+    const db = this.firebaseService.getFirestore();
+    const [userSnap, sysUserSnap] = await Promise.all([
+      db.collection('users').where('email', '==', email).get(),
+      db.collection('systemUsers').where('email', '==', email).get(),
+    ]);
+
+    // IMPORTANT: same priority as login — systemUsers takes precedence over users
+    const doc = !sysUserSnap.empty ? sysUserSnap.docs[0] : !userSnap.empty ? userSnap.docs[0] : null;
+
+    if (!doc) {
+      throw new Error('No account found with that email address');
+    }
+
+    await doc.ref.update({ password: newPassword, updatedAt: new Date() });
+    return { success: true };
+  }
+
+  /**
+   * Build a full user profile from Firestore for the given user ID.
+   * Used by GET /api/auth/me so the frontend always gets fresh data.
+   */
+  async getProfile(userId: string) {
+    const db = this.firebaseService.getFirestore();
+
+    // Look in systemUsers first (has role assignments), then users
+    let doc: any = null;
+    const sysDoc = await db.collection('systemUsers').doc(userId).get();
+    if (sysDoc.exists) {
+      doc = sysDoc;
+    } else {
+      const userDoc = await db.collection('users').doc(userId).get();
+      if (userDoc.exists) doc = userDoc;
+    }
+
+    if (!doc) throw new Error('User not found');
+    const userData = doc.data();
+    const resolvedId = userData.id || doc.id;
+
+    // ── Role lookup ────────────────────────────────────────
+    let permissions: any[] = [];
+    let scopeType: string[] = [];
+    let roleId = userData.roleId || userData.role || '';
+    let accessType = 'custom';
+    const rolesRef = db.collection('roles');
+    let roleDoc: any = null;
+
+    if (roleId) {
+      const byId = await rolesRef.doc(roleId).get();
+      if (byId.exists) {
+        roleDoc = byId.data();
+      } else {
+        const byName = await rolesRef.where('name', '==', roleId).limit(1).get();
+        if (!byName.empty) { roleDoc = byName.docs[0].data(); roleId = byName.docs[0].id; }
+      }
+    }
+    if (!roleDoc && userData.roleName) {
+      const byRoleName = await rolesRef.where('name', '==', userData.roleName).limit(1).get();
+      if (!byRoleName.empty) { roleDoc = byRoleName.docs[0].data(); roleId = byRoleName.docs[0].id; }
+    }
+    if (roleDoc) {
+      permissions = roleDoc.permissions || [];
+      accessType = roleDoc.accessType || 'custom';
+      scopeType = roleDoc.scopeType || [];
+    }
+
+    // ── Employee record ────────────────────────────────────
+    let employeeId = userData.employeeId || '';
+    let employeeCode = userData.employeeCode || '';
+    if (employeeId && !employeeCode) {
+      try {
+        const empDoc = await db.collection('employees').doc(employeeId).get();
+        if (empDoc.exists) employeeCode = (empDoc.data() as any).employeeCode || '';
+      } catch { /* non-critical */ }
+    }
+
+    return {
+      id: resolvedId,
+      email: userData.email,
+      fullName: userData.fullName || userData.name || '',
+      role: userData.role,
+      roleName: roleDoc?.name || userData.roleName || '',
+      roleId,
+      accessType,
+      permissions,
+      scopeType,
+      employeeId,
+      employeeCode,
+    };
   }
 
   async validateToken(token: string) {

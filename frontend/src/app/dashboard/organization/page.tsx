@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useState } from 'react';
 import { ProtectedRoute } from '@/components/auth/protected-route';
@@ -75,7 +75,7 @@ function OrganizationContent() {
 
 export default function OrganizationPage() {
   return (
-    <ProtectedRoute>
+    <ProtectedRoute moduleId="organization">
       <DashboardLayout>
         <OrganizationContent />
       </DashboardLayout>

@@ -1,6 +1,7 @@
-import { IsString, IsEmail, IsOptional, IsNumber } from 'class-validator';
+import { IsString, IsEmail, IsOptional, IsNumber, IsArray } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 import { PartialType } from '@nestjs/swagger';
+import { Transform } from 'class-transformer';
 import { CreateEmployeeDto } from './create-employee.dto';
 
 export class UpdateEmployeeDto extends PartialType(CreateEmployeeDto) {
@@ -28,4 +29,18 @@ export class UpdateEmployeeDto extends PartialType(CreateEmployeeDto) {
   @IsOptional()
   @IsString()
   employmentStatus?: string;
+
+  // Explicitly re-declare documents so the whitelist validator keeps it
+  @ApiProperty({ required: false, type: [Object] })
+  @IsOptional()
+  @IsArray()
+  @Transform(({ value }) => value)
+  documents?: any[];
+
+  // Explicitly re-declare profilePicture so the whitelist validator keeps it
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  @Transform(({ value }) => value)
+  profilePicture?: string;
 }

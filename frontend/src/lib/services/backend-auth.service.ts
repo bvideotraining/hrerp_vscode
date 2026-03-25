@@ -1,6 +1,7 @@
-/**
+﻿/**
  * Backend API Service for authenticating with NestJS API
- * Handles login/signup with JWT token management
+ * JWT is stored in an HTTP-only cookie set by the server — never in localStorage.
+ * All requests use the direct backend URL with credentials: 'include' for cross-origin cookies.
  */
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3003';
@@ -21,142 +22,68 @@ export interface AuthResponse {
   email: string;
   fullName: string;
   role: string;
-  accessToken: string;
-  tokenType: string;
+  roleName?: string;
+  roleId?: string;
+  accessType?: 'full' | 'custom';
+  permissions?: { moduleId: string; moduleName: string; actions: string[] }[];
+  scopeType?: string[];
+  employeeId?: string;
+  employeeCode?: string;
+  branch?: string;
+  department?: string;
 }
 
 class BackendAuthService {
-  /**
-   * Login with backend API
-   */
   async login(payload: LoginPayload): Promise<AuthResponse> {
     const response = await fetch(`${API_URL}/api/auth/login`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
-
     if (!response.ok) {
-      const error = await response.json();
+      const error = await response.json().catch(() => ({}));
       throw new Error(error.message || 'Login failed');
     }
-
-    const data = await response.json();
-    
-    // Store JWT token in localStorage
-    if (data.accessToken) {
-      localStorage.setItem('jwtToken', data.accessToken);
-      localStorage.setItem('user', JSON.stringify({
-        id: data.id,
-        email: data.email,
-        fullName: data.fullName,
-        role: data.role,
-      }));
-    }
-
-    return data;
+    return response.json();
   }
 
-  /**
-   * Signup with backend API
-   */
   async signup(payload: SignupPayload): Promise<AuthResponse> {
     const response = await fetch(`${API_URL}/api/auth/signup`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
-
     if (!response.ok) {
-      const error = await response.json();
+      const error = await response.json().catch(() => ({}));
       throw new Error(error.message || 'Signup failed');
     }
-
-    const data = await response.json();
-
-    // Store JWT token
-    if (data.accessToken) {
-      localStorage.setItem('jwtToken', data.accessToken);
-      localStorage.setItem('user', JSON.stringify({
-        id: data.id,
-        email: data.email,
-        fullName: data.fullName,
-        role: data.role,
-      }));
-    }
-
-    return data;
-  }
-
-  /**
-   * Get stored JWT token
-   */
-  getToken(): string | null {
-    if (typeof window === 'undefined') return null;
-    return localStorage.getItem('jwtToken');
-  }
-
-  /**
-   * Get current user from storage
-   */
-  getCurrentUser(): any {
-    if (typeof window === 'undefined') return null;
-    const user = localStorage.getItem('user');
-    return user ? JSON.parse(user) : null;
-  }
-
-  /**
-   * Logout and clear token
-   */
-  logout(): void {
-    if (typeof window !== 'undefined') {
-      localStorage.removeItem('jwtToken');
-      localStorage.removeItem('user');
-    }
-  }
-
-  /**
-   * Get authorization header with JWT token
-   */
-  getAuthHeader(): {Authorization: string} | {} {
-    const token = this.getToken();
-    return token ? { Authorization: `Bearer ${token}` } : {};
-  }
-
-  /**
-   * Make authenticated API request
-   */
-  async authenticatedRequest(
-    endpoint: string,
-    options: RequestInit = {}
-  ): Promise<any> {
-    const headers = {
-      'Content-Type': 'application/json',
-      ...this.getAuthHeader(),
-      ...options.headers,
-    };
-
-    const response = await fetch(`${API_URL}${endpoint}`, {
-      ...options,
-      headers,
-    });
-
-    if (response.status === 401) {
-      // Token expired, clear storage
-      this.logout();
-      window.location.href = '/login';
-    }
-
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.message || 'Request failed');
-    }
-
     return response.json();
+  }
+
+  async resetPassword(payload: { email: string; newPassword: string }): Promise<{ success: boolean }> {
+    const response = await fetch(`${API_URL}/api/auth/reset-password`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw new Error(error.message || 'Password reset failed');
+    }
+    return response.json();
+  }
+
+  async getMe(): Promise<AuthResponse | null> {
+    const response = await fetch(`${API_URL}/api/auth/me`, { credentials: 'include' });
+    if (!response.ok) return null;
+    return response.json();
+  }
+
+  async logout(): Promise<void> {
+    await fetch(`${API_URL}/api/auth/logout`, { method: 'POST', credentials: 'include' }).catch(() => {});
   }
 }
 

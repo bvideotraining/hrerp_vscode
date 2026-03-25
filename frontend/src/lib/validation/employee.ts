@@ -1,20 +1,18 @@
 import { z } from 'zod';
 
-
-// Zod validation schemas for Employee form
+// Zod v4 compatible validation schema for Employee form
 
 export const employeeValidationSchema = z.object({
   fullName: z
     .string()
     .min(2, 'Full name must be at least 2 characters')
-    .max(100, 'Full name must be less than 100 characters')
-    .regex(/^[a-zA-Z\s'-]*$/, 'Full name can only contain letters, spaces, hyphens, and apostrophes'),
+    .max(100, 'Full name must be less than 100 characters'),
 
   employeeCode: z
     .string()
     .min(3, 'Employee code must be at least 3 characters')
     .max(20, 'Employee code must be less than 20 characters')
-    .regex(/^[A-Z0-9-]*$/, 'Employee code must be uppercase letters, numbers, and hyphens'),
+    .transform((val) => val.toUpperCase()),
 
   email: z
     .string()
@@ -22,8 +20,7 @@ export const employeeValidationSchema = z.object({
 
   phone: z
     .string()
-    .min(10, 'Phone number must be at least 10 digits')
-    .regex(/^\+?[0-9\s-()]*$/, 'Please enter a valid phone number'),
+    .min(10, 'Phone number must be at least 10 digits'),
 
   nationalId: z
     .string()
@@ -32,15 +29,9 @@ export const employeeValidationSchema = z.object({
 
   dateOfBirth: z
     .string()
-    .refine((date: string) => {
-      const birth = new Date(date);
-      const today = new Date();
-      const age = today.getFullYear() - birth.getFullYear();
-      return age >= 18 && age <= 75;
-    }, 'Employee must be between 18 and 75 years old'),
+    .min(1, 'Date of birth is required'),
 
-  gender: z.enum(['M', 'F'])
-    .refine(val => ['M', 'F'].includes(val), { message: 'Please select a valid gender' }),
+  gender: z.enum(['M', 'F']),
 
   branch: z
     .string()
@@ -54,33 +45,18 @@ export const employeeValidationSchema = z.object({
     .string()
     .min(1, 'Please select a job title'),
 
-  category: z
-    .enum(['WhiteCollar', 'BlueCollar', 'Management', 'PartTime'])
-    .refine(val => ['WhiteCollar', 'BlueCollar', 'Management', 'PartTime'].includes(val), {
-      message: 'Please select a valid category'
-    }),
+  category: z.enum(['WhiteCollar', 'BlueCollar', 'Management', 'PartTime']),
 
   currentSalary: z
     .number()
     .min(0, 'Salary cannot be negative')
-    .min(1000, 'Salary must be at least 1,000')
     .max(10000000, 'Salary exceeds maximum allowed'),
 
   startDate: z
     .string()
-    .refine((date: string) => {
-      const start = new Date(date);
-      const today = new Date();
-      return start <= today;
-    }, 'Start date cannot be in the future'),
+    .min(1, 'Start date is required'),
 
-  resignationDate: z
-    .string()
-    .optional()
-    .refine(
-      (date: string | undefined) => !date || new Date(date) > new Date(),
-      'Resignation date must be in the future'
-    ),
+  resignationDate: z.string().optional(),
 
   currency: z
     .string()
@@ -90,16 +66,9 @@ export const employeeValidationSchema = z.object({
     .string()
     .min(1, 'Please select a payment method'),
 
-  currentAddress: z
-    .string()
-    .min(5, 'Address must be at least 5 characters')
-    .max(200, 'Address must be less than 200 characters')
-    .optional()
-    .or(z.literal('')),
+  currentAddress: z.string().max(200, 'Address must be less than 200 characters').optional(),
 
-  positionType: z
-    .string()
-    .min(1, 'Please select a position type'),
+  positionType: z.string().optional().default('Full-time'),
 
   employmentType: z
     .string()
@@ -110,36 +79,26 @@ export const employeeValidationSchema = z.object({
       z.object({
         id: z.string(),
         type: z.string().min(1, 'Document type is required'),
-        file: z.string().min(1, 'File name is required'),
+        file: z.string().optional().default(''),
+        fileContent: z.string().optional(),
         receivedDate: z.string().min(1, 'Received date is required'),
         expiryDate: z.string().optional(),
         notes: z.string().optional(),
-        status: z.enum(['Current', 'Expired', 'Renewal Pending'])
+        status: z.enum(['Current', 'Expired', 'Renewal Pending']).optional().default('Current'),
       })
     )
     .optional()
     .default([]),
 
-  employmentStatus: z
-    .string()
-    .optional()
-    .default('Active'),
+  employmentStatus: z.string().optional().default('Active'),
+
+  profilePicture: z.string().optional(),
+
+  nationality: z.string().optional(),
+
+  bankName: z.string().optional(),
+
+  accountNumber: z.string().optional(),
 });
 
 export type EmployeeFormData = z.infer<typeof employeeValidationSchema>;
-
-export const validateEmployee = (data: unknown) => {
-  try {
-    return employeeValidationSchema.parse(data);
-  } catch (error) {
-    if (error instanceof z.ZodError) {
-      const fieldErrors: Record<string, string> = {};
-      error.issues.forEach((err: z.ZodIssue) => {
-        const path = err.path.join('.');
-        fieldErrors[path] = err.message;
-      });
-      return { success: false, errors: fieldErrors };
-    }
-    return { success: false, errors: { general: 'Validation failed' } };
-  }
-};

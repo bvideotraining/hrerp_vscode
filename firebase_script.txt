@@ -45,5 +45,7 @@ npx next dev
 Then open: http://localhost:3000 (or :3001)
 
 =======================================================
-
-
+GITHUB : For future pushes, just run:
+git add .
+git commit -m "your message"
+git push
