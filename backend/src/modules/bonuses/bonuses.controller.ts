@@ -21,7 +21,7 @@ function isAdmin(user: any): boolean {
   return ADMIN_ROLES.includes(user?.role) || user?.accessType === 'full';
 }
 
-@Controller('bonuses')
+@Controller('api/bonuses')
 @UseGuards(JwtAuthGuard)
 export class BonusesController {
   constructor(private readonly bonusesService: BonusesService) {}

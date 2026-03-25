@@ -191,13 +191,32 @@ export class SettingsService {
 
   async getUserNotifications(userId: string) {
     const db = this.firebaseService.getFirestore();
-    const snap = await db
-      .collection('notifications')
-      .where('userId', '==', userId)
-      .orderBy('createdAt', 'desc')
-      .limit(50)
-      .get();
-    return snap.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+    try {
+      const snap = await db
+        .collection('notifications')
+        .where('userId', '==', userId)
+        .orderBy('createdAt', 'desc')
+        .limit(50)
+        .get();
+      return snap.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+    } catch (err: any) {
+      // Firestore composite index may not exist yet — fall back to unordered query
+      if (err?.code === 9 || (err?.message || '').includes('requires an index')) {
+        const snap = await db
+          .collection('notifications')
+          .where('userId', '==', userId)
+          .limit(50)
+          .get();
+        return snap.docs
+          .map((doc) => ({ id: doc.id, ...(doc.data() as any) }))
+          .sort((a, b) => {
+            const aTime = a.createdAt?.toMillis?.() ?? new Date(a.createdAt).getTime() ?? 0;
+            const bTime = b.createdAt?.toMillis?.() ?? new Date(b.createdAt).getTime() ?? 0;
+            return bTime - aTime;
+          });
+      }
+      throw err;
+    }
   }
 
   async markNotificationRead(id: string) {
