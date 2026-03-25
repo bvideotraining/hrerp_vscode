@@ -31,8 +31,9 @@ export class LeavesController {
     @Request() req: any = {},
   ) {
     const role = req.user?.role || '';
+    const accessType = req.user?.accessType || '';
     const userId = req.user?.sub || req.user?.id || '';
-    return this.leavesService.findAll(employeeId, status, role, userId);
+    return this.leavesService.findAll(employeeId, status, role, userId, accessType);
   }
 
   @Get(':id')
@@ -43,7 +44,7 @@ export class LeavesController {
 
   @Patch(':id')
   @HttpCode(200)
-  @ApiOperation({ summary: 'Update leave (admin/hr can approve/reject; approvers can approve/reject; employees edit own pending)' })
+  @ApiOperation({ summary: 'Update leave (admin/hr/application-admin can approve/reject; approvers can approve/reject; employees edit own pending)' })
   async update(
     @Param('id') id: string,
     @Body() dto: UpdateLeaveDto,
@@ -51,7 +52,8 @@ export class LeavesController {
   ) {
     const requesterId = req.user?.sub || req.user?.id || '';
     const requesterRole = req.user?.role || '';
-    return this.leavesService.update(id, dto, requesterId, requesterRole);
+    const accessType = req.user?.accessType || '';
+    return this.leavesService.update(id, dto, requesterId, requesterRole, accessType);
   }
 
   @Delete(':id')
@@ -59,6 +61,7 @@ export class LeavesController {
   async remove(@Param('id') id: string, @Request() req: any) {
     const requesterId = req.user?.sub || req.user?.id || '';
     const requesterRole = req.user?.role || '';
-    return this.leavesService.remove(id, requesterId, requesterRole);
+    const accessType = req.user?.accessType || '';
+    return this.leavesService.remove(id, requesterId, requesterRole, accessType);
   }
 }

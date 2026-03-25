@@ -7,6 +7,11 @@ const ADMIN_ROLES = ['admin', 'hr_manager'];
 const APPROVER_ROLES = ['approver', 'branch_approver'];
 const ALL_PRIVILEGED = [...ADMIN_ROLES, ...APPROVER_ROLES];
 
+/** Application Admin has role='employee' but accessType='full' — treat as admin */
+function isAdmin(role: string, accessType: string): boolean {
+  return ADMIN_ROLES.includes(role) || accessType === 'full';
+}
+
 @Injectable()
 export class LeavesService {
   constructor(
@@ -37,6 +42,7 @@ export class LeavesService {
     status?: string,
     requesterRole?: string,
     requesterId?: string,
+    accessType?: string,
   ) {
     const db = this.firebaseService.getFirestore();
     let query: any;
@@ -52,6 +58,9 @@ export class LeavesService {
     if (status) {
       records = records.filter((r: any) => r.status === status);
     }
+
+    // Application Admin (accessType='full') sees all — no branch filter
+    if (isAdmin(requesterRole || '', accessType || '')) return records;
 
     // Branch approver: restrict to leaves in their branch
     if (requesterRole === 'branch_approver' && requesterId) {
@@ -82,17 +91,18 @@ export class LeavesService {
     dto: UpdateLeaveDto,
     requesterId: string,
     requesterRole: string,
+    accessType: string = '',
   ) {
     const db = this.firebaseService.getFirestore();
     const doc = await db.collection('leaves').doc(id).get();
     if (!doc.exists) throw new NotFoundException('Leave request not found');
 
     const existing = doc.data() as any;
-    const isAdmin = ADMIN_ROLES.includes(requesterRole);
+    const isAdminUser = isAdmin(requesterRole, accessType);
     const isApprover = requesterRole === 'approver';
     const isBranchApprover = requesterRole === 'branch_approver';
 
-    if (isAdmin) {
+    if (isAdminUser) {
       // Admin/HR: full access — no restrictions
     } else if (isApprover) {
       // Approver: can only approve/reject pending leaves
@@ -162,14 +172,14 @@ export class LeavesService {
     return { id, ...existing, ...data };
   }
 
-  async remove(id: string, requesterId: string, requesterRole: string) {
+  async remove(id: string, requesterId: string, requesterRole: string, accessType: string = '') {
     const db = this.firebaseService.getFirestore();
     const doc = await db.collection('leaves').doc(id).get();
     if (!doc.exists) throw new NotFoundException('Leave request not found');
 
     const existing = doc.data() as any;
 
-    if (!ADMIN_ROLES.includes(requesterRole)) {
+    if (!isAdmin(requesterRole, accessType)) {
       if (existing.employeeId !== requesterId && existing.createdBy !== requesterId) {
         throw new ForbiddenException('You can only cancel your own leave requests');
       }
