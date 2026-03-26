@@ -1,9 +1,10 @@
 ﻿'use client';
 
 import { useState, useEffect, useRef } from 'react';
+import * as XLSX from 'xlsx';
 import { ProtectedRoute } from '@/components/auth/protected-route';
 import DashboardLayout from '@/components/dashboard/layout';
-import { useAuth } from '@/hooks/use-auth';
+import { useAuth } from '@/context/auth-context';
 import { bonusesService, BonusRecord, CreateBonusPayload } from '@/lib/services/bonuses.service';
 import { organizationService, MonthRange } from '@/lib/services/organization.service';
 import { employeeService } from '@/lib/services/employee.service';
@@ -27,7 +28,7 @@ function computeTotal(b: Partial<CreateBonusPayload>): number {
   );
 }
 
-// ─── CSV Export ──────────────────────────────────────────────────────────────
+// ─── Export Helpers ───────────────────────────────────────────────────────────
 function exportCSV(records: BonusRecord[], monthName: string) {
   const headers = ['Employee', 'Code', 'Branch', 'Category', 'Month', 'Saturday', 'Duty', 'Potty', 'After School', 'Transportation', 'Extra', 'Total', 'Notes'];
   const rows = records.map((r) => [
@@ -46,18 +47,41 @@ function exportCSV(records: BonusRecord[], monthName: string) {
   URL.revokeObjectURL(url);
 }
 
+function exportExcel(records: BonusRecord[], monthName: string) {
+  const data = records.map((r) => ({
+    Employee: r.employeeName,
+    Code: r.employeeCode,
+    Branch: r.branch,
+    Category: r.category,
+    Month: r.monthName,
+    'Saturday (EGP)': r.saturday ?? 0,
+    'Duty (EGP)': r.duty ?? 0,
+    'Potty (EGP)': r.potty ?? 0,
+    'After School (EGP)': r.afterSchool ?? 0,
+    'Transportation (EGP)': r.transportation ?? 0,
+    'Extra Bonus (EGP)': r.extraBonus ?? 0,
+    'Total (EGP)': r.total ?? 0,
+    Notes: r.notes ?? '',
+  }));
+  const ws = XLSX.utils.json_to_sheet(data);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Bonuses');
+  XLSX.writeFile(wb, `bonuses_${monthName || 'all'}.xlsx`);
+}
+
 // ─── Bonus Form Modal ─────────────────────────────────────────────────────────
 interface BonusFormModalProps {
   employees: Employee[];
   monthRanges: MonthRange[];
   editRecord?: BonusRecord | null;
+  defaultMonthId?: string;
   onClose: () => void;
   onSave: (payload: CreateBonusPayload) => Promise<void>;
 }
 
-function BonusFormModal({ employees, monthRanges, editRecord, onClose, onSave }: BonusFormModalProps) {
+function BonusFormModal({ employees, monthRanges, editRecord, defaultMonthId, onClose, onSave }: BonusFormModalProps) {
   const [employeeId, setEmployeeId] = useState(editRecord?.employeeId || '');
-  const [monthId, setMonthId] = useState(editRecord?.monthId || '');
+  const [monthId, setMonthId] = useState(editRecord?.monthId || defaultMonthId || '');
   const [saturday, setSaturday] = useState(String(editRecord?.saturday ?? 0));
   const [duty, setDuty] = useState(String(editRecord?.duty ?? 0));
   const [potty, setPotty] = useState(String(editRecord?.potty ?? 0));
@@ -74,6 +98,12 @@ function BonusFormModal({ employees, monthRanges, editRecord, onClose, onSave }:
     saturday: Number(saturday), duty: Number(duty), potty: Number(potty),
     afterSchool: Number(afterSchool), transportation: Number(transportation), extraBonus: Number(extraBonus),
   });
+
+  function handleRecalculate() {
+    // Reset to zero — user can re-enter or trigger sync
+    setSaturday('0'); setDuty('0'); setPotty('0');
+    setAfterSchool('0'); setTransportation('0'); setExtraBonus('0');
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -100,69 +130,156 @@ function BonusFormModal({ employees, monthRanges, editRecord, onClose, onSave }:
     }
   }
 
+  const fields: { label: string; value: string; set: (v: string) => void }[] = [
+    { label: 'Saturday Shift', value: saturday, set: setSaturday },
+    { label: 'Duty Allowance', value: duty, set: setDuty },
+    { label: 'Potty Training', value: potty, set: setPotty },
+    { label: 'After School', value: afterSchool, set: setAfterSchool },
+    { label: 'Transportation', value: transportation, set: setTransportation },
+    { label: 'Extra Bonus', value: extraBonus, set: setExtraBonus },
+  ];
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
-          <h2 className="text-lg font-semibold text-slate-900">{editRecord ? 'Edit Bonus Record' : 'Add Bonus Record'}</h2>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-2xl leading-none">&times;</button>
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-[92vh] overflow-y-auto flex flex-col">
+        {/* Dark header */}
+        <div className="flex items-center justify-between px-6 py-4 bg-slate-800 rounded-t-xl flex-shrink-0">
+          <h2 className="text-base font-semibold text-white">
+            {editRecord ? 'Edit Bonus Entry' : 'New Bonus Entry'}
+          </h2>
+          <button onClick={onClose} className="text-slate-400 hover:text-white text-xl leading-none transition-colors">&times;</button>
         </div>
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
-          {error && <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-4 py-2">{error}</div>}
-          <div className="grid grid-cols-2 gap-4">
-            <div className="col-span-2">
-              <label className="block text-sm font-medium text-slate-700 mb-1">Employee</label>
-              <select value={employeeId} onChange={(e) => setEmployeeId(e.target.value)} disabled={!!editRecord}
-                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-slate-50">
-                <option value="">Select employee...</option>
+
+        <form onSubmit={handleSubmit} className="flex flex-col flex-1">
+          <div className="p-6 space-y-4 flex-1">
+            {error && (
+              <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-4 py-2">{error}</div>
+            )}
+
+            {/* Employee */}
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1.5">Employee</label>
+              <select
+                value={employeeId}
+                onChange={(e) => setEmployeeId(e.target.value)}
+                disabled={!!editRecord}
+                className="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-slate-50 bg-white"
+              >
+                <option value="">Select an employee...</option>
                 {employees.map((emp) => (
-                  <option key={emp.id} value={emp.id}>{emp.fullName} ({emp.employeeCode})</option>
+                  <option key={emp.id} value={emp.id}>
+                    {emp.fullName} ({emp.employeeCode})
+                  </option>
                 ))}
               </select>
               {selectedEmployee && (
-                <p className="text-xs text-slate-500 mt-1">{selectedEmployee.branch} &middot; {selectedEmployee.category} &middot; {selectedEmployee.jobTitle}</p>
+                <p className="text-xs text-slate-500 mt-1">
+                  {selectedEmployee.branch} &middot; {selectedEmployee.category} &middot; {selectedEmployee.jobTitle}
+                </p>
               )}
             </div>
-            <div className="col-span-2">
-              <label className="block text-sm font-medium text-slate-700 mb-1">Month</label>
-              <select value={monthId} onChange={(e) => setMonthId(e.target.value)} disabled={!!editRecord}
-                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-slate-50">
-                <option value="">Select month...</option>
+
+            {/* Month */}
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1.5">Month</label>
+              <select
+                value={monthId}
+                onChange={(e) => setMonthId(e.target.value)}
+                disabled={!!editRecord}
+                className="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-slate-50 bg-white"
+              >
+                <option value="">Select a month...</option>
                 {monthRanges.map((m) => (
                   <option key={m.id} value={m.id}>{m.monthName}</option>
                 ))}
               </select>
             </div>
-            {([
-              { label: 'Saturday', value: saturday, set: setSaturday },
-              { label: 'Duty', value: duty, set: setDuty },
-              { label: 'Potty', value: potty, set: setPotty },
-              { label: 'After School', value: afterSchool, set: setAfterSchool },
-              { label: 'Transportation', value: transportation, set: setTransportation },
-              { label: 'Extra Bonus', value: extraBonus, set: setExtraBonus },
-            ] as const).map(({ label, value, set }) => (
-              <div key={label}>
-                <label className="block text-sm font-medium text-slate-700 mb-1">{label} (EGP)</label>
-                <input type="number" min="0" value={value} onChange={(e) => (set as any)(e.target.value)}
-                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-              </div>
-            ))}
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Notes</label>
-            <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2}
-              className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-          </div>
-          <div className="flex items-center justify-between pt-2 border-t border-slate-200">
-            <div className="text-sm font-semibold text-slate-700">
-              Total: <span className="text-green-600 text-base">{total.toLocaleString()} EGP</span>
-            </div>
-            <div className="flex gap-2">
-              <button type="button" onClick={onClose} className="px-4 py-2 text-sm border border-slate-300 rounded-lg text-slate-700 hover:bg-slate-50">Cancel</button>
-              <button type="submit" disabled={saving} className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-60">
-                {saving ? 'Saving...' : 'Save'}
+
+            {/* COMPONENTS divider */}
+            <div className="flex items-center justify-between border-t border-b border-slate-200 bg-slate-50 -mx-6 px-6 py-2">
+              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Components</span>
+              <button
+                type="button"
+                onClick={handleRecalculate}
+                className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 font-medium transition-colors"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                Recalculate
               </button>
             </div>
+
+            {/* 2-column EGP input grid */}
+            <div className="grid grid-cols-2 gap-3">
+              {fields.map(({ label, value, set }) => (
+                <div key={label}>
+                  <label className="block text-xs font-medium text-slate-500 mb-1.5">{label}</label>
+                  <div className="flex rounded-lg border border-slate-300 overflow-hidden focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-blue-500">
+                    <span className="px-2.5 py-2 bg-slate-100 text-slate-500 text-xs font-medium border-r border-slate-300 flex items-center select-none">
+                      EGP
+                    </span>
+                    <input
+                      type="number"
+                      min="0"
+                      value={value}
+                      onChange={(e) => set(e.target.value)}
+                      className="flex-1 px-3 py-2 text-sm focus:outline-none bg-white text-slate-900 min-w-0"
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Notes */}
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1.5">Notes</label>
+              <textarea
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                rows={3}
+                placeholder="e.g. Excellent performance"
+                className="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+              />
+            </div>
+
+            {/* Total Bonus bar */}
+            <div className="flex items-center justify-between rounded-lg bg-blue-50 border border-blue-200 px-4 py-3">
+              <span className="text-sm font-medium text-slate-700">Total Bonus</span>
+              <span className="text-base font-bold text-blue-600">EGP {total.toLocaleString()}</span>
+            </div>
+          </div>
+
+          {/* Footer buttons */}
+          <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-slate-200 flex-shrink-0">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-5 py-2.5 text-sm border border-slate-300 rounded-lg text-slate-700 hover:bg-slate-50 transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={saving}
+              className="flex items-center gap-2 px-5 py-2.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-60 transition-colors font-medium"
+            >
+              {saving ? (
+                <>
+                  <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                  Saving...
+                </>
+              ) : (
+                <>
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
+                  </svg>
+                  Save Entry
+                </>
+              )}
+            </button>
           </div>
         </form>
       </div>
@@ -234,6 +351,8 @@ function ImportGuideModal({ onClose, onImport }: { onClose: () => void; onImport
 function BonusesContent() {
   const { user } = useAuth();
   const admin = isAdmin(user);
+  // Standard employees can only view their own bonuses
+  const isEmployee = user?.role === 'employee';
 
   const [monthRanges, setMonthRanges] = useState<MonthRange[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
@@ -251,6 +370,7 @@ function BonusesContent() {
   const [deleteConfirm, setDeleteConfirm] = useState<BonusRecord | null>(null);
   const [branches, setBranches] = useState<string[]>([]);
   const [mounted, setMounted] = useState(false);
+  const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
 
   useEffect(() => { setMounted(true); }, []);
 
@@ -271,7 +391,7 @@ function BonusesContent() {
 
   useEffect(() => {
     if (!mounted) return;
-    loadRecords();
+    loadRecords(selectedMonthId);
   }, [selectedMonthId, mounted]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function showToast(msg: string, type: 'success' | 'error') {
@@ -279,10 +399,10 @@ function BonusesContent() {
     setTimeout(() => setToast(null), 4000);
   }
 
-  async function loadRecords() {
+  async function loadRecords(monthId: string) {
     setLoading(true);
     try {
-      const data = await bonusesService.getAll(selectedMonthId || undefined);
+      const data = await bonusesService.getAll(monthId || undefined);
       setRecords(data);
     } catch (err: any) {
       showToast(err.message || 'Failed to load records', 'error');
@@ -295,19 +415,25 @@ function BonusesContent() {
     if (editRecord) {
       await bonusesService.update(editRecord.id, payload);
       showToast('Bonus record updated.', 'success');
+      setEditRecord(null);
+      await loadRecords(selectedMonthId);
     } else {
       await bonusesService.create(payload);
       showToast('Bonus record added.', 'success');
+      setEditRecord(null);
+      // Switch month selector to match the saved record, then load that month's records.
+      // We pass payload.monthId directly to loadRecords — this avoids the stale closure
+      // problem where setSelectedMonthId triggers the useEffect before state updates.
+      setSelectedMonthId(payload.monthId);
+      await loadRecords(payload.monthId);
     }
-    setEditRecord(null);
-    await loadRecords();
   }
 
   async function handleDelete(record: BonusRecord) {
     try {
       await bonusesService.delete(record.id);
       showToast('Record deleted.', 'success');
-      await loadRecords();
+      await loadRecords(selectedMonthId);
     } catch (err: any) {
       showToast(err.message || 'Delete failed', 'error');
     } finally {
@@ -324,9 +450,10 @@ function BonusesContent() {
         monthId: month.id!,
         startDate: month.startDate,
         endDate: month.endDate,
+        monthName: month.monthName,
       });
       showToast(result.message, 'success');
-      await loadRecords();
+      await loadRecords(selectedMonthId);
     } catch (err: any) {
       showToast(err.message || 'Sync failed', 'error');
     } finally {
@@ -365,13 +492,15 @@ function BonusesContent() {
         imported += 1;
       }
       showToast(`Imported ${imported} record(s) successfully.`, 'success');
-      await loadRecords();
+      await loadRecords(selectedMonthId);
     } catch (err: any) {
       showToast(err.message || 'Import failed', 'error');
     }
   }
 
   const filteredRecords = records.filter((r) => {
+    // Employees can only see their own records
+    if (isEmployee && r.employeeId !== user?.employeeId) return false;
     if (filterBranch && r.branch !== filterBranch) return false;
     if (filterCategory && r.category !== filterCategory) return false;
     if (search) {
@@ -387,144 +516,331 @@ function BonusesContent() {
 
   return (
     <div className="p-6 space-y-5">
+      {/* Toast */}
       {toast && (
-        <div className={`fixed top-4 right-4 z-50 px-4 py-3 rounded-lg shadow-lg text-sm font-medium ${toast.type === 'success' ? 'bg-green-600 text-white' : 'bg-red-600 text-white'}`}>
+        <div className={`fixed top-4 right-4 z-50 px-4 py-3 rounded-lg shadow-lg text-sm font-medium transition-all ${toast.type === 'success' ? 'bg-green-600 text-white' : 'bg-red-600 text-white'}`}>
           {toast.msg}
         </div>
       )}
 
-      {/* Header */}
-      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+      {/* ── Top Bar ─────────────────────────────────────────────────── */}
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div>
-          <h2 className="text-2xl font-bold text-slate-900">Bonuses</h2>
-          <p className="text-sm text-slate-500 mt-0.5">Track and manage employee bonus records by month</p>
+          <h1 className="text-2xl font-bold text-slate-900">Bonus Management</h1>
+          <p className="text-sm text-slate-500 mt-0.5">Manage extra incentives and shift bonuses.</p>
         </div>
-        {admin && (
-          <div className="flex flex-wrap gap-2">
-            <select value={selectedMonthId} onChange={(e) => setSelectedMonthId(e.target.value)}
-              className="border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
-              <option value="">All Months</option>
-              {monthRanges.map((m) => <option key={m.id} value={m.id}>{m.monthName}</option>)}
-            </select>
-            <button onClick={handleSyncSaturdays} disabled={syncing || !selectedMonthId}
-              title={!selectedMonthId ? 'Select a month first' : 'Auto-sync Saturday bonuses for Helpers & Cleaners'}
-              className="flex items-center gap-1.5 px-3 py-2 text-sm bg-amber-500 text-white rounded-lg hover:bg-amber-600 disabled:opacity-50">
-              <svg className={`w-4 h-4 ${syncing ? 'animate-spin' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-              </svg>
-              {syncing ? 'Syncing...' : 'Sync Saturdays'}
-            </button>
-            <button onClick={() => exportCSV(filteredRecords, selectedMonthObj?.monthName || '')} disabled={filteredRecords.length === 0}
-              className="flex items-center gap-1.5 px-3 py-2 text-sm border border-slate-300 rounded-lg text-slate-700 hover:bg-slate-50 disabled:opacity-50">
+
+        <div className="flex flex-wrap items-center gap-2">
+          {/* View toggle */}
+          <div className="flex items-center border border-slate-300 rounded-lg overflow-hidden">
+            <button
+              onClick={() => setViewMode('list')}
+              title="List view"
+              className={`px-2.5 py-2 ${viewMode === 'list' ? 'bg-slate-100 text-slate-800' : 'text-slate-400 hover:bg-slate-50'}`}
+            >
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
               </svg>
-              Export CSV
             </button>
-            <button onClick={() => window.print()} disabled={filteredRecords.length === 0}
-              className="flex items-center gap-1.5 px-3 py-2 text-sm border border-slate-300 rounded-lg text-slate-700 hover:bg-slate-50 disabled:opacity-50">
+            <button
+              onClick={() => setViewMode('grid')}
+              title="Grid view"
+              className={`px-2.5 py-2 border-l border-slate-300 ${viewMode === 'grid' ? 'bg-slate-100 text-slate-800' : 'text-slate-400 hover:bg-slate-50'}`}
+            >
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
               </svg>
-              Export PDF
             </button>
-            <button onClick={() => setShowImport(true)}
-              className="flex items-center gap-1.5 px-3 py-2 text-sm border border-slate-300 rounded-lg text-slate-700 hover:bg-slate-50">
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-              </svg>
-              Import
-            </button>
-            <button onClick={() => { setEditRecord(null); setShowForm(true); }}
-              className="flex items-center gap-1.5 px-3 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+          </div>
+
+          {/* Month selector */}
+          <select
+            value={selectedMonthId}
+            onChange={(e) => setSelectedMonthId(e.target.value)}
+            className="border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+          >
+            <option value="">All Months</option>
+            {monthRanges.map((m) => <option key={m.id} value={m.id}>{m.monthName}</option>)}
+          </select>
+
+          {/* Add Bonus — admin/hr only */}
+          {admin && (
+            <button
+              onClick={() => { setEditRecord(null); setShowForm(true); }}
+              className="flex items-center gap-1.5 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium shadow-sm"
+            >
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
               </svg>
               Add Bonus
             </button>
-          </div>
+          )}
+
+          {/* Sync Saturdays — admin/hr only */}
+          {admin && (
+            <button
+              onClick={handleSyncSaturdays}
+              disabled={syncing || !selectedMonthId}
+              title={!selectedMonthId ? 'Select a month first' : 'Auto-calculate Saturday bonuses from attendance (Helper=200 EGP/day, Cleaner=100 EGP/day)'}
+              className="flex items-center gap-1.5 px-3 py-2 text-sm border border-amber-300 bg-amber-50 text-amber-800 rounded-lg hover:bg-amber-100 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <svg className={`w-4 h-4 ${syncing ? 'animate-spin' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+              {syncing ? 'Syncing...' : 'Sync Saturdays'}
+            </button>
+          )}
+
+          {admin && (
+            <>
+              {/* Export dropdown */}
+              <div className="relative group">
+                <button
+                  disabled={filteredRecords.length === 0}
+                  className="flex items-center gap-1.5 px-3 py-2 text-sm border border-slate-300 rounded-lg text-slate-700 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                  </svg>
+                  Export
+                  <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
+                {filteredRecords.length > 0 && (
+                  <div className="absolute right-0 mt-1 w-40 bg-white border border-slate-200 rounded-lg shadow-lg z-20 hidden group-hover:block">
+                    <button
+                      onClick={() => exportExcel(filteredRecords, selectedMonthObj?.monthName || '')}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 rounded-t-lg"
+                    >
+                      <svg className="w-4 h-4 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2" />
+                      </svg>
+                      Export Excel
+                    </button>
+                    <button
+                      onClick={() => exportCSV(filteredRecords, selectedMonthObj?.monthName || '')}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
+                    >
+                      <svg className="w-4 h-4 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                      </svg>
+                      Export CSV
+                    </button>
+                    <button
+                      onClick={() => window.print()}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 rounded-b-lg"
+                    >
+                      <svg className="w-4 h-4 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+                      </svg>
+                      Export PDF
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* Import */}
+              <button
+                onClick={() => setShowImport(true)}
+                className="flex items-center gap-1.5 px-3 py-2 text-sm border border-slate-300 rounded-lg text-slate-700 hover:bg-slate-50"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                </svg>
+                Import
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* ── Info banner — admin/hr only ──────────────────────────────── */}
+      {!isEmployee && (
+        <div className="flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-lg px-4 py-2.5 text-sm text-blue-800">
+          <svg className="w-4 h-4 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+            <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+          </svg>
+          <span>
+            <strong>Auto-Calculation Active:</strong> Saturday bonuses for{' '}
+            <span className="font-semibold text-blue-700">Helpers (200 EGP/day)</span> and{' '}
+            <span className="font-semibold text-blue-700">Cleaners (100 EGP/day)</span> are automatically calculated.
+          </span>
+        </div>
+      )}
+
+      {/* ── Filters ─────────────────────────────────────────────────── */}
+      <div className="flex flex-wrap gap-3 items-center bg-white border border-slate-200 rounded-xl px-4 py-3 shadow-sm">
+        <div className="relative flex-1 min-w-[180px]">
+          <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35M17 11A6 6 0 115 11a6 6 0 0112 0z" />
+          </svg>
+          <input
+            type="text"
+            placeholder="Search employee..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="w-full pl-9 pr-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+        </div>
+        {!isEmployee && (
+          <>
+            <select
+              value={filterBranch}
+              onChange={(e) => setFilterBranch(e.target.value)}
+              className="border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white min-w-[140px]"
+            >
+              <option value="">All Branches</option>
+              {branches.map((b) => <option key={b} value={b}>{b}</option>)}
+            </select>
+            <select
+              value={filterCategory}
+              onChange={(e) => setFilterCategory(e.target.value)}
+              className="border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white min-w-[140px]"
+            >
+              <option value="">All Categories</option>
+              {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </>
         )}
+        <span className="text-sm text-slate-500 ml-auto whitespace-nowrap">
+          {filteredRecords.length} {filteredRecords.length === 1 ? 'entry' : 'entries'}
+        </span>
       </div>
 
-      {/* Info banner */}
-      <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-lg px-4 py-2.5 text-sm text-amber-800">
-        <svg className="w-4 h-4 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
-          <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
-        </svg>
-        <span>Auto-calculation via &ldquo;Sync Saturdays&rdquo;: <strong>Helpers</strong> earn 200 EGP/Saturday day, <strong>Cleaners</strong> earn 100 EGP/Saturday day based on attendance records.</span>
-      </div>
-
-      {/* Filters */}
-      <div className="flex flex-wrap gap-3 items-center">
-        {!admin && (
-          <select value={selectedMonthId} onChange={(e) => setSelectedMonthId(e.target.value)}
-            className="border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
-            <option value="">All Months</option>
-            {monthRanges.map((m) => <option key={m.id} value={m.id}>{m.monthName}</option>)}
-          </select>
-        )}
-        <input type="text" placeholder="Search by name or code..." value={search} onChange={(e) => setSearch(e.target.value)}
-          className="border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 min-w-[200px]" />
-        <select value={filterBranch} onChange={(e) => setFilterBranch(e.target.value)}
-          className="border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
-          <option value="">All Branches</option>
-          {branches.map((b) => <option key={b} value={b}>{b}</option>)}
-        </select>
-        <select value={filterCategory} onChange={(e) => setFilterCategory(e.target.value)}
-          className="border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
-          <option value="">All Categories</option>
-          {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
-        </select>
-        <span className="text-sm text-slate-500 ml-auto">{filteredRecords.length} record{filteredRecords.length !== 1 ? 's' : ''}</span>
-      </div>
-
-      {/* Table */}
-      <div className="rounded-xl border border-slate-200 bg-white overflow-hidden shadow-sm">
-        {loading ? (
-          <div className="p-12 text-center text-slate-500 text-sm">Loading records...</div>
-        ) : filteredRecords.length === 0 ? (
-          <div className="p-12 text-center">
-            <div className="text-4xl mb-3">🎁</div>
-            <h3 className="text-slate-700 font-medium mb-1">No bonus records found</h3>
-            <p className="text-slate-500 text-sm">{selectedMonthId ? 'No bonuses for this month yet.' : 'Select a month or add a new record.'}</p>
-          </div>
-        ) : (
+      {/* ── Content ─────────────────────────────────────────────────── */}
+      {loading ? (
+        <div className="rounded-xl border border-slate-200 bg-white p-16 text-center text-slate-500 text-sm shadow-sm">
+          Loading records...
+        </div>
+      ) : filteredRecords.length === 0 ? (
+        <div className="rounded-xl border border-slate-200 bg-white p-16 text-center shadow-sm">
+          <div className="text-5xl mb-3">🎁</div>
+          <h3 className="text-slate-700 font-semibold mb-1">No bonus records found</h3>
+          <p className="text-slate-500 text-sm">
+            {selectedMonthId ? 'No bonuses recorded for this month yet.' : 'Select a month or add a new record.'}
+          </p>
+          {admin && (
+            <button
+              onClick={() => { setEditRecord(null); setShowForm(true); }}
+              className="mt-4 inline-flex items-center gap-1.5 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+              Add First Record
+            </button>
+          )}
+        </div>
+      ) : viewMode === 'grid' ? (
+        /* ── Grid View ── */
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+          {filteredRecords.map((r) => (
+            <div key={r.id} className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 space-y-3 hover:shadow-md transition-shadow">
+              <div className="flex items-start justify-between">
+                <div>
+                  <div className="font-semibold text-slate-900 text-sm">{r.employeeName}</div>
+                  <div className="text-xs text-slate-500">{r.employeeCode} &middot; {r.branch}</div>
+                </div>
+                <span className="text-[11px] px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 font-medium whitespace-nowrap">{r.monthName}</span>
+              </div>
+              <div className="grid grid-cols-2 gap-1.5 text-xs">
+                {([
+                  { label: 'Saturday', value: r.saturday },
+                  { label: 'Duty', value: r.duty },
+                  { label: 'Potty', value: r.potty },
+                  { label: 'After School', value: r.afterSchool },
+                  { label: 'Transport', value: r.transportation },
+                  { label: 'Extra', value: r.extraBonus },
+                ] as { label: string; value: number | undefined }[]).map(({ label, value }) => (
+                  <div key={label} className="flex justify-between bg-slate-50 rounded px-2 py-1">
+                    <span className="text-slate-500">{label}</span>
+                    <span className="font-medium text-slate-700">{(value ?? 0).toLocaleString()}</span>
+                  </div>
+                ))}
+              </div>
+              <div className="flex items-center justify-between pt-1 border-t border-slate-200">
+                <span className="text-xs text-slate-500">Total</span>
+                <span className="font-bold text-blue-600 text-sm">EGP {(r.total ?? 0).toLocaleString()}</span>
+              </div>
+              {admin && (
+                <div className="flex gap-2 pt-0.5">
+                  <button
+                    onClick={() => { setEditRecord(r); setShowForm(true); }}
+                    className="flex-1 flex items-center justify-center gap-1 py-1.5 text-xs border border-blue-200 text-blue-600 rounded-lg hover:bg-blue-50"
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                    </svg>
+                    Edit
+                  </button>
+                  <button
+                    onClick={() => setDeleteConfirm(r)}
+                    className="flex-1 flex items-center justify-center gap-1 py-1.5 text-xs border border-red-200 text-red-500 rounded-lg hover:bg-red-50"
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    </svg>
+                    Delete
+                  </button>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      ) : (
+        /* ── List / Table View ── */
+        <div className="rounded-xl border border-slate-200 bg-white overflow-hidden shadow-sm">
           <div className="overflow-x-auto">
             <table className="min-w-full text-sm">
               <thead className="bg-slate-50 border-b border-slate-200">
                 <tr>
-                  {['Employee', 'Branch', 'Category', 'Month', 'Saturday', 'Duty', 'Potty', 'After School', 'Transport', 'Extra', 'Total'].map((h) => (
-                    <th key={h} className="text-left px-4 py-3 font-semibold text-slate-600 whitespace-nowrap">{h}</th>
-                  ))}
-                  {admin && <th className="text-left px-4 py-3 font-semibold text-slate-600">Actions</th>}
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Employee</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Saturday</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Duty</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Potty</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">After School</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Extra</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Total</th>
+                  {admin && <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Actions</th>}
                 </tr>
               </thead>
-              <tbody>
-                {filteredRecords.map((r, i) => (
-                  <tr key={r.id} className={`border-b border-slate-100 hover:bg-slate-50 ${i % 2 === 0 ? '' : 'bg-slate-50/30'}`}>
-                    <td className="px-4 py-3">
-                      <div className="font-medium text-slate-900">{r.employeeName}</div>
-                      <div className="text-xs text-slate-500">{r.employeeCode}</div>
+              <tbody className="divide-y divide-slate-100">
+                {filteredRecords.map((r) => (
+                  <tr key={r.id} className="hover:bg-slate-50 transition-colors">
+                    <td className="px-4 py-3.5">
+                      <div className="font-semibold text-slate-900">{r.employeeName}</div>
+                      <div className="text-xs text-slate-400 mt-0.5">{r.employeeCode} &middot; {r.branch}</div>
                     </td>
-                    <td className="px-4 py-3 text-slate-600">{r.branch}</td>
-                    <td className="px-4 py-3">
-                      <span className="inline-block text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-700">{r.category}</span>
+                    <td className="px-4 py-3.5 text-slate-600 tabular-nums">EGP {(r.saturday ?? 0).toLocaleString()}</td>
+                    <td className="px-4 py-3.5 text-slate-600 tabular-nums">EGP {(r.duty ?? 0).toLocaleString()}</td>
+                    <td className="px-4 py-3.5 text-slate-600 tabular-nums">EGP {(r.potty ?? 0).toLocaleString()}</td>
+                    <td className="px-4 py-3.5 text-slate-600 tabular-nums">EGP {(r.afterSchool ?? 0).toLocaleString()}</td>
+                    <td className="px-4 py-3.5 text-slate-600 tabular-nums">EGP {((r.extraBonus ?? 0) + (r.transportation ?? 0)).toLocaleString()}</td>
+                    <td className="px-4 py-3.5 tabular-nums">
+                      <span className="font-bold text-blue-600">EGP {(r.total ?? 0).toLocaleString()}</span>
                     </td>
-                    <td className="px-4 py-3 text-slate-600">{r.monthName}</td>
-                    <td className="px-4 py-3 text-right tabular-nums text-slate-700">{(r.saturday ?? 0).toLocaleString()}</td>
-                    <td className="px-4 py-3 text-right tabular-nums text-slate-700">{(r.duty ?? 0).toLocaleString()}</td>
-                    <td className="px-4 py-3 text-right tabular-nums text-slate-700">{(r.potty ?? 0).toLocaleString()}</td>
-                    <td className="px-4 py-3 text-right tabular-nums text-slate-700">{(r.afterSchool ?? 0).toLocaleString()}</td>
-                    <td className="px-4 py-3 text-right tabular-nums text-slate-700">{(r.transportation ?? 0).toLocaleString()}</td>
-                    <td className="px-4 py-3 text-right tabular-nums text-slate-700">{(r.extraBonus ?? 0).toLocaleString()}</td>
-                    <td className="px-4 py-3 text-right tabular-nums font-semibold text-green-700">{(r.total ?? 0).toLocaleString()}</td>
                     {admin && (
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-2">
-                          <button onClick={() => { setEditRecord(r); setShowForm(true); }}
-                            className="text-blue-600 hover:text-blue-800 text-xs font-medium">Edit</button>
-                          <button onClick={() => setDeleteConfirm(r)}
-                            className="text-red-500 hover:text-red-700 text-xs font-medium">Delete</button>
+                      <td className="px-4 py-3.5">
+                        <div className="flex items-center gap-1">
+                          <button
+                            onClick={() => { setEditRecord(r); setShowForm(true); }}
+                            title="Edit"
+                            className="p-1.5 rounded-lg text-slate-400 hover:bg-blue-50 hover:text-blue-600 transition-colors"
+                          >
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                            </svg>
+                          </button>
+                          <button
+                            onClick={() => setDeleteConfirm(r)}
+                            title="Delete"
+                            className="p-1.5 rounded-lg text-slate-400 hover:bg-red-50 hover:text-red-500 transition-colors"
+                          >
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
+                          </button>
                         </div>
                       </td>
                     )}
@@ -533,24 +849,28 @@ function BonusesContent() {
               </tbody>
               <tfoot className="bg-slate-50 border-t-2 border-slate-200">
                 <tr>
-                  <td colSpan={4} className="px-4 py-3 font-semibold text-slate-700">Totals</td>
-                  {(['saturday', 'duty', 'potty', 'afterSchool', 'transportation', 'extraBonus', 'total'] as const).map((field) => (
-                    <td key={field} className="px-4 py-3 text-right tabular-nums font-semibold text-slate-800">
-                      {filteredRecords.reduce((sum, r) => sum + (r[field] || 0), 0).toLocaleString()}
-                    </td>
-                  ))}
+                  <td className="px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider">Totals</td>
+                  <td className="px-4 py-3 font-semibold text-slate-700 tabular-nums">EGP {filteredRecords.reduce((s, r) => s + (r.saturday || 0), 0).toLocaleString()}</td>
+                  <td className="px-4 py-3 font-semibold text-slate-700 tabular-nums">EGP {filteredRecords.reduce((s, r) => s + (r.duty || 0), 0).toLocaleString()}</td>
+                  <td className="px-4 py-3 font-semibold text-slate-700 tabular-nums">EGP {filteredRecords.reduce((s, r) => s + (r.potty || 0), 0).toLocaleString()}</td>
+                  <td className="px-4 py-3 font-semibold text-slate-700 tabular-nums">EGP {filteredRecords.reduce((s, r) => s + (r.afterSchool || 0), 0).toLocaleString()}</td>
+                  <td className="px-4 py-3 font-semibold text-slate-700 tabular-nums">EGP {filteredRecords.reduce((s, r) => s + (r.extraBonus || 0) + (r.transportation || 0), 0).toLocaleString()}</td>
+                  <td className="px-4 py-3 font-bold text-blue-600 tabular-nums">EGP {filteredRecords.reduce((s, r) => s + (r.total || 0), 0).toLocaleString()}</td>
                   {admin && <td />}
                 </tr>
               </tfoot>
             </table>
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
-      {/* Modals */}
+      {/* ── Modals ──────────────────────────────────────────────────── */}
       {showForm && (
         <BonusFormModal
-          employees={employees} monthRanges={monthRanges} editRecord={editRecord}
+          employees={employees}
+          monthRanges={monthRanges}
+          editRecord={editRecord}
+          defaultMonthId={selectedMonthId}
           onClose={() => { setShowForm(false); setEditRecord(null); }}
           onSave={handleSave}
         />
@@ -560,12 +880,13 @@ function BonusesContent() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm p-6">
             <h3 className="text-lg font-semibold text-slate-900 mb-2">Delete Bonus Record?</h3>
-            <p className="text-sm text-slate-600 mb-4">
-              Delete bonus record for <strong>{deleteConfirm.employeeName}</strong> ({deleteConfirm.monthName})?
+            <p className="text-sm text-slate-600 mb-5">
+              This will permanently delete the bonus record for{' '}
+              <strong>{deleteConfirm.employeeName}</strong> ({deleteConfirm.monthName}).
             </p>
             <div className="flex gap-2 justify-end">
               <button onClick={() => setDeleteConfirm(null)} className="px-4 py-2 text-sm border border-slate-300 rounded-lg text-slate-700 hover:bg-slate-50">Cancel</button>
-              <button onClick={() => handleDelete(deleteConfirm)} className="px-4 py-2 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700">Delete</button>
+              <button onClick={() => handleDelete(deleteConfirm)} className="px-4 py-2 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700 font-medium">Delete</button>
             </div>
           </div>
         </div>

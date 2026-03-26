@@ -10,9 +10,11 @@ import { JwtStrategy } from './strategies/jwt.strategy';
   imports: [
     FirebaseModule,
     PassportModule.register({ defaultStrategy: 'jwt' }),
-    JwtModule.register({
-      secret: process.env.JWT_SECRET || 'your-secret-key-change-in-production',
-      signOptions: { expiresIn: (process.env.JWT_EXPIRATION || '24h') as any },
+    JwtModule.registerAsync({
+      useFactory: () => ({
+        secret: process.env.JWT_SECRET || 'your-secret-key-change-in-production',
+        signOptions: { expiresIn: (process.env.JWT_EXPIRATION || '24h') as any },
+      }),
     }),
   ],
   controllers: [AuthController],

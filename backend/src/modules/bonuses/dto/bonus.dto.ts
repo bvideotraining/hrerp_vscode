@@ -110,4 +110,8 @@ export class SyncSaturdaysDto {
 
   @IsString()
   endDate: string;
+
+  @IsString()
+  @IsOptional()
+  monthName?: string;
 }

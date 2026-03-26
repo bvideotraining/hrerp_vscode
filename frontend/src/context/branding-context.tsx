@@ -20,38 +20,21 @@ export function BrandingProvider({ children }: { children: ReactNode }) {
   const [logoUrl, setLogoUrl] = useState('');
 
   useEffect(() => {
-    // Load from localStorage first for instant display
-    try {
-      const cached = localStorage.getItem('appBranding');
-      if (cached) {
-        const parsed = JSON.parse(cached);
-        if (parsed.appName) setAppName(parsed.appName);
-        if (parsed.logoUrl) setLogoUrl(parsed.logoUrl);
-      }
-    } catch {
-      // ignore parse errors
-    }
-
-    // Then fetch fresh from backend
-    const token = localStorage.getItem('jwtToken');
-    if (token) {
-      organizationService.getBranding()
-        .then((data) => {
-          if (data.appName) setAppName(data.appName);
-          if (data.logoUrl !== undefined) setLogoUrl(data.logoUrl || '');
-          localStorage.setItem('appBranding', JSON.stringify(data));
-        })
-        .catch(() => {
-          // silently fail — use cached values
-        });
-    }
+    // Always fetch branding from database — no local cache
+    organizationService.getBranding()
+      .then((data) => {
+        if (data.appName) setAppName(data.appName);
+        if (data.logoUrl !== undefined) setLogoUrl(data.logoUrl || '');
+      })
+      .catch(() => {
+        // silently fail — keep defaults
+      });
   }, []);
 
   const updateBranding = async (data: Branding) => {
     await organizationService.updateBranding(data);
     setAppName(data.appName);
     setLogoUrl(data.logoUrl || '');
-    localStorage.setItem('appBranding', JSON.stringify(data));
   };
 
   return (

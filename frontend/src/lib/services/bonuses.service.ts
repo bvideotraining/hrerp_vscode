@@ -58,6 +58,7 @@ export interface SyncSaturdaysPayload {
   monthId: string;
   startDate: string;
   endDate: string;
+  monthName?: string;
 }
 
 export interface SyncSaturdaysResult {

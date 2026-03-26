@@ -7,11 +7,13 @@ const SATURDAY_RATES: { keyword: string; rate: number }[] = [
   { keyword: 'cleaner', rate: 100 },
 ];
 
-function getSaturdayRate(jobTitle: string): number {
-  if (!jobTitle) return 0;
-  const lower = jobTitle.toLowerCase();
+function getSaturdayRate(employee: { jobTitle?: string; department?: string }): number {
+  const combined = [employee.jobTitle, employee.department]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
   for (const entry of SATURDAY_RATES) {
-    if (lower.includes(entry.keyword)) return entry.rate;
+    if (combined.includes(entry.keyword)) return entry.rate;
   }
   return 0;
 }
@@ -31,12 +33,16 @@ function computeTotal(data: Partial<CreateBonusDto>): number {
 export class BonusesService {
   constructor(private firebaseService: FirebaseService) {}
 
-  async findAll(monthId?: string, branch?: string, category?: string) {
+  async findAll(monthId?: string, branch?: string, category?: string, employeeId?: string) {
     const db = this.firebaseService.getFirestore();
     let query: FirebaseFirestore.Query = db.collection('bonuses');
 
     if (monthId) {
       query = query.where('monthId', '==', monthId);
+    }
+    // Scope to a specific employee when provided (standard employee role)
+    if (employeeId) {
+      query = query.where('employeeId', '==', employeeId);
     }
 
     const snapshot = await query.get();
@@ -149,7 +155,7 @@ export class BonusesService {
       const employee = employeeMap[empId];
       if (!employee) continue;
 
-      const rate = getSaturdayRate(employee.jobTitle || '');
+      const rate = getSaturdayRate(employee);
       // Only update employees that have a saturday rate (Helper/Cleaner)
       if (rate === 0) continue;
 
@@ -175,7 +181,7 @@ export class BonusesService {
           branch: employee.branch || '',
           category: employee.category || '',
           monthId: dto.monthId,
-          monthName: dto.startDate ? dto.startDate.substring(0, 7) : '',
+          monthName: dto.monthName || dto.monthId,
           saturday: saturdayAmount,
           duty: 0,
           potty: 0,

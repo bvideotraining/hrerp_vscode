@@ -74,16 +74,25 @@ export class AuthService {
       ]);
 
       // Prefer systemUsers (has roleId + roleName) over generic users
-      const doc = !systemUserDoc.empty ? systemUserDoc.docs[0] : !userDoc.empty ? userDoc.docs[0] : null;
+      // But if systemUser has no password field, fall back to users collection for verification
+      let doc = !systemUserDoc.empty ? systemUserDoc.docs[0] : !userDoc.empty ? userDoc.docs[0] : null;
+      let passwordDoc = doc; // the doc used for password verification
+
+      // When the primary doc is from systemUsers but has no password, use the users
+      // collection entry for password verification (same email)
+      if (!systemUserDoc.empty && systemUserDoc.docs[0].data().password === undefined && !userDoc.empty) {
+        passwordDoc = userDoc.docs[0];
+      }
 
       if (!doc) {
         throw new Error('User not found');
       }
 
       const userData = doc.data();
+      const passwordData = passwordDoc!.data();
 
       // Verify password (TODO: Use bcryptjs.compare() in production)
-      if (userData.password !== password) {
+      if (passwordData.password !== password) {
         throw new Error('Invalid password');
       }
 
@@ -152,10 +161,13 @@ export class AuthService {
       }
 
       // Generate JWT token
+      // Derive a stable role string: use userData.role if set, otherwise derive
+      // from accessType ('full' → 'admin', 'custom' → 'employee')
+      const effectiveRole = userData.role || (accessType === 'full' ? 'admin' : 'employee');
       const accessToken = this.jwtService.sign({
         sub: resolvedId,
         email: userData.email,
-        role: userData.role,
+        role: effectiveRole,
         accessType,
         employeeId,
         employeeCode,
@@ -165,7 +177,7 @@ export class AuthService {
         id: resolvedId,
         email: userData.email,
         fullName: userData.fullName || userData.name || '',
-        role: userData.role,
+        role: effectiveRole,
         roleName: roleDoc?.name || userData.roleName || '',
         roleId,
         accessType,

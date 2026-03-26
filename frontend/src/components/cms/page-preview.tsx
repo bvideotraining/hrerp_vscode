@@ -30,17 +30,43 @@ export default function PagePreview({ blocks, pageSlug = '' }: Props) {
 // ─── Hero ────────────────────────────────────────────────────────────────────
 
 function HeroPreview({ data }: { data: HeroData }) {
-  const { template, title, subtitle, buttonText, buttonLink, backgroundImage, overlayColor } = data;
+  const {
+    template, title, subtitle, buttonText, buttonLink, backgroundImage, overlayColor,
+    titleFontFamily, titleFontSize, titleColor,
+    subtitleFontFamily, subtitleFontSize, subtitleColor,
+    buttonBgColor, buttonTextColor,
+  } = data;
+
+  const titleStyle: React.CSSProperties = {
+    ...(titleFontFamily ? { fontFamily: titleFontFamily } : {}),
+    ...(titleFontSize ? { fontSize: titleFontSize } : {}),
+    ...(titleColor ? { color: titleColor } : {}),
+  };
+
+  const subtitleStyle: React.CSSProperties = {
+    ...(subtitleFontFamily ? { fontFamily: subtitleFontFamily } : {}),
+    ...(subtitleFontSize ? { fontSize: subtitleFontSize } : {}),
+    ...(subtitleColor ? { color: subtitleColor } : {}),
+  };
+
+  const buttonStyle: React.CSSProperties = {
+    ...(buttonBgColor ? { backgroundColor: buttonBgColor } : {}),
+    ...(buttonTextColor ? { color: buttonTextColor } : {}),
+  };
 
   if (template === 'split') {
     return (
       <section className="min-h-[500px] flex items-center">
         <div className="container mx-auto max-w-7xl px-6 grid grid-cols-1 md:grid-cols-2 gap-12 items-center">
           <div>
-            <h1 className="text-5xl font-bold text-slate-900 mb-4 leading-tight">{title}</h1>
-            <p className="text-xl text-slate-600 mb-8">{subtitle}</p>
+            <h1 className="text-5xl font-bold text-slate-900 mb-4 leading-tight" style={titleStyle}>{title}</h1>
+            <p className="text-xl text-slate-600 mb-8" style={subtitleStyle}>{subtitle}</p>
             {buttonText && (
-              <a href={buttonLink || '#'} className="inline-block px-8 py-3 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition-colors text-lg">
+              <a
+                href={buttonLink || '#'}
+                className="inline-block px-8 py-3 bg-blue-600 text-white rounded-lg font-semibold hover:opacity-90 transition-opacity text-lg"
+                style={Object.keys(buttonStyle).length ? buttonStyle : undefined}
+              >
                 {buttonText}
               </a>
             )}
@@ -66,10 +92,14 @@ function HeroPreview({ data }: { data: HeroData }) {
           <div className="absolute inset-0" style={{ backgroundColor: overlayColor }} />
         )}
         <div className="relative z-10 text-center px-6 max-w-3xl">
-          <h1 className="text-5xl md:text-6xl font-bold text-white mb-6 leading-tight">{title}</h1>
-          <p className="text-xl text-white/90 mb-8">{subtitle}</p>
+          <h1 className="text-5xl md:text-6xl font-bold text-white mb-6 leading-tight" style={titleStyle}>{title}</h1>
+          <p className="text-xl text-white/90 mb-8" style={subtitleStyle}>{subtitle}</p>
           {buttonText && (
-            <a href={buttonLink || '#'} className="inline-block px-8 py-3 bg-white text-slate-900 rounded-lg font-semibold hover:bg-slate-100 transition-colors text-lg">
+            <a
+              href={buttonLink || '#'}
+              className="inline-block px-8 py-3 bg-white text-slate-900 rounded-lg font-semibold hover:opacity-90 transition-opacity text-lg"
+              style={Object.keys(buttonStyle).length ? buttonStyle : undefined}
+            >
               {buttonText}
             </a>
           )}
@@ -85,10 +115,14 @@ function HeroPreview({ data }: { data: HeroData }) {
           <div className="absolute inset-0" style={{ backgroundColor: overlayColor }} />
         )}
         <div className="relative z-10 text-center px-6 max-w-3xl">
-          <h1 className="text-5xl md:text-6xl font-bold text-white mb-6 leading-tight">{title}</h1>
-          <p className="text-xl text-white/90 mb-8">{subtitle}</p>
+          <h1 className="text-5xl md:text-6xl font-bold text-white mb-6 leading-tight" style={titleStyle}>{title}</h1>
+          <p className="text-xl text-white/90 mb-8" style={subtitleStyle}>{subtitle}</p>
           {buttonText && (
-            <a href={buttonLink || '#'} className="inline-block px-8 py-3 bg-white text-slate-900 rounded-lg font-semibold hover:bg-slate-100 transition-colors text-lg">
+            <a
+              href={buttonLink || '#'}
+              className="inline-block px-8 py-3 bg-white text-slate-900 rounded-lg font-semibold hover:opacity-90 transition-opacity text-lg"
+              style={Object.keys(buttonStyle).length ? buttonStyle : undefined}
+            >
               {buttonText}
             </a>
           )}
@@ -101,10 +135,14 @@ function HeroPreview({ data }: { data: HeroData }) {
   return (
     <section className="min-h-[500px] flex items-center justify-center bg-slate-50">
       <div className="text-center px-6 max-w-3xl">
-        <h1 className="text-5xl md:text-6xl font-bold text-slate-900 mb-6 leading-tight">{title}</h1>
-        <p className="text-xl text-slate-600 mb-8">{subtitle}</p>
+        <h1 className="text-5xl md:text-6xl font-bold text-slate-900 mb-6 leading-tight" style={titleStyle}>{title}</h1>
+        <p className="text-xl text-slate-600 mb-8" style={subtitleStyle}>{subtitle}</p>
         {buttonText && (
-          <a href={buttonLink || '#'} className="inline-block px-8 py-3 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition-colors text-lg">
+          <a
+            href={buttonLink || '#'}
+            className="inline-block px-8 py-3 bg-blue-600 text-white rounded-lg font-semibold hover:opacity-90 transition-opacity text-lg"
+            style={Object.keys(buttonStyle).length ? buttonStyle : undefined}
+          >
             {buttonText}
           </a>
         )}

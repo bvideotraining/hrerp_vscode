@@ -37,6 +37,16 @@ export interface HeroData {
   buttonLink?: string;
   backgroundImage?: string;
   overlayColor?: string;
+  // Typography
+  titleFontFamily?: string;
+  titleFontSize?: string;
+  titleColor?: string;
+  subtitleFontFamily?: string;
+  subtitleFontSize?: string;
+  subtitleColor?: string;
+  // Button styling
+  buttonBgColor?: string;
+  buttonTextColor?: string;
 }
 
 export interface CardItem {
@@ -199,14 +209,12 @@ class CmsService {
   // â”€â”€ Image upload â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   async uploadImage(file: File): Promise<{ url: string }> {
-    const token = typeof window !== 'undefined' ? localStorage.getItem('jwtToken') : null;
     const formData = new FormData();
     formData.append('file', file);
+    // Use credentials:'include' so the HTTP-only jwtToken cookie is forwarded
     const response = await fetch(`${API_URL}/api/cms/upload-image`, {
       method: 'POST',
-      headers: {
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      },
+      credentials: 'include',
       body: formData,
     });
     if (!response.ok) {

@@ -64,15 +64,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             scopeType: profile.scopeType || [],
             avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${profile.email}`,
           });
-        } else {
-          // Cookie missing or invalid — clear any stale data
-          localStorage.removeItem('jwtToken');
-          localStorage.removeItem('user');
         }
       } catch (error) {
         console.error('Auth check failed:', error);
-        localStorage.removeItem('jwtToken');
-        localStorage.removeItem('user');
       } finally {
         setIsLoading(false);
       }
