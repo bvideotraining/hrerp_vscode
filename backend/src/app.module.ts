@@ -9,6 +9,7 @@ import { AttendanceModule } from './modules/attendance/attendance.module';
 import { SettingsModule } from './modules/settings/settings.module';
 import { LeavesModule } from './modules/leaves/leaves.module';
 import { BonusesModule } from './modules/bonuses/bonuses.module';
+import { SocialInsuranceModule } from './modules/social-insurance/social-insurance.module';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 
@@ -27,6 +28,7 @@ import { AppService } from './app.service';
     SettingsModule,
     LeavesModule,
     BonusesModule,
+    SocialInsuranceModule,
   ],
   controllers: [AppController],
   providers: [AppService],
