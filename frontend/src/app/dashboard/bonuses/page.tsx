@@ -1,7 +1,6 @@
 ﻿'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import * as XLSX from 'xlsx';
 import { ProtectedRoute } from '@/components/auth/protected-route';
 import DashboardLayout from '@/components/dashboard/layout';
 import { useAuth } from '@/context/auth-context';
@@ -47,7 +46,7 @@ function exportCSV(records: BonusRecord[], monthName: string) {
   URL.revokeObjectURL(url);
 }
 
-function exportExcel(records: BonusRecord[], monthName: string) {
+async function exportExcel(records: BonusRecord[], monthName: string) {
   const data = records.map((r) => ({
     Employee: r.employeeName,
     Code: r.employeeCode,
@@ -63,6 +62,7 @@ function exportExcel(records: BonusRecord[], monthName: string) {
     'Total (EGP)': r.total ?? 0,
     Notes: r.notes ?? '',
   }));
+  const XLSX = await import('xlsx');
   const ws = XLSX.utils.json_to_sheet(data);
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Bonuses');
@@ -351,8 +351,8 @@ function ImportGuideModal({ onClose, onImport }: { onClose: () => void; onImport
 function BonusesContent() {
   const { user } = useAuth();
   const admin = isAdmin(user);
-  // Standard employees can only view their own bonuses
-  const isEmployee = user?.role === 'employee';
+  // Standard employees (non-admin) can only view their own bonuses
+  const isEmployee = !admin;
 
   const [monthRanges, setMonthRanges] = useState<MonthRange[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
@@ -371,6 +371,9 @@ function BonusesContent() {
   const [branches, setBranches] = useState<string[]>([]);
   const [mounted, setMounted] = useState(false);
   const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
+  // Incrementing this counter forces the records useEffect to re-run after
+  // any write (create / update / delete / import) without any race conditions.
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => { setMounted(true); }, []);
 
@@ -392,7 +395,7 @@ function BonusesContent() {
   useEffect(() => {
     if (!mounted) return;
     loadRecords(selectedMonthId);
-  }, [selectedMonthId, mounted]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [selectedMonthId, mounted, reloadKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function showToast(msg: string, type: 'success' | 'error') {
     setToast({ msg, type });
@@ -416,16 +419,17 @@ function BonusesContent() {
       await bonusesService.update(editRecord.id, payload);
       showToast('Bonus record updated.', 'success');
       setEditRecord(null);
-      await loadRecords(selectedMonthId);
+      // React 18 batches both updates → one render → effect fires once
+      setReloadKey((k) => k + 1);
     } else {
       await bonusesService.create(payload);
       showToast('Bonus record added.', 'success');
       setEditRecord(null);
-      // Switch month selector to match the saved record, then load that month's records.
-      // We pass payload.monthId directly to loadRecords — this avoids the stale closure
-      // problem where setSelectedMonthId triggers the useEffect before state updates.
+      // Switch the month selector to the saved month so the new record is visible.
+      // setReloadKey guarantees the effect fires even if the month was already selected.
+      // React 18 batches both setState calls → single render → effect fires once.
       setSelectedMonthId(payload.monthId);
-      await loadRecords(payload.monthId);
+      setReloadKey((k) => k + 1);
     }
   }
 
@@ -433,7 +437,7 @@ function BonusesContent() {
     try {
       await bonusesService.delete(record.id);
       showToast('Record deleted.', 'success');
-      await loadRecords(selectedMonthId);
+      setReloadKey((k) => k + 1);
     } catch (err: any) {
       showToast(err.message || 'Delete failed', 'error');
     } finally {
@@ -453,7 +457,7 @@ function BonusesContent() {
         monthName: month.monthName,
       });
       showToast(result.message, 'success');
-      await loadRecords(selectedMonthId);
+      setReloadKey((k) => k + 1);
     } catch (err: any) {
       showToast(err.message || 'Sync failed', 'error');
     } finally {
@@ -492,7 +496,7 @@ function BonusesContent() {
         imported += 1;
       }
       showToast(`Imported ${imported} record(s) successfully.`, 'success');
-      await loadRecords(selectedMonthId);
+      setReloadKey((k) => k + 1);
     } catch (err: any) {
       showToast(err.message || 'Import failed', 'error');
     }

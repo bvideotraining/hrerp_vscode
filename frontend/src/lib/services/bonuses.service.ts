@@ -73,7 +73,8 @@ export const bonusesService = {
     if (branch) params.set('branch', branch);
     if (category) params.set('category', category);
     const qs = params.toString();
-    return apiFetch<BonusRecord[]>(`/api/bonuses${qs ? `?${qs}` : ''}`);
+    const url = `/api/bonuses${qs ? `?${qs}` : ''}`;
+    return apiFetch<BonusRecord[]>(url);
   },
 
   create(payload: CreateBonusPayload): Promise<BonusRecord> {

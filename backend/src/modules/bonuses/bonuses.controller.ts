@@ -33,13 +33,13 @@ export class BonusesController {
     @Query('category') category?: string,
     @Req() req?: any,
   ) {
-    // Only restrict to own records when the user has an explicit 'employee' role.
-    // Admins/managers may have a custom role name or roleId in the JWT that won't
-    // match ADMIN_ROLES, so we use the positive employee-role check instead.
-    const isEmployeeRole = req?.user?.role === 'employee';
-    const scopeToEmployeeId = isEmployeeRole
-      ? (req.user.employeeId || undefined)
-      : undefined;
+    const userInfo = req?.user;
+    const admin = isAdmin(userInfo);
+    // Admins (role in ADMIN_ROLES or accessType 'full') see all records.
+    // Everyone else is scoped to their own employeeId.
+    const scopeToEmployeeId = admin
+      ? undefined
+      : (userInfo?.employeeId || undefined);
     return this.bonusesService.findAll(monthId, branch, category, scopeToEmployeeId);
   }
 
