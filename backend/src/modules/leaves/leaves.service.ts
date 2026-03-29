@@ -1,7 +1,9 @@
-import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
+import { v4 as uuidv4 } from 'uuid';
 import { FirebaseService } from '../../config/firebase/firebase.service';
 import { CreateLeaveDto, UpdateLeaveDto } from './dto/leave.dto';
 import { LeaveBalanceService } from './leave-balance.service';
+import { AttendanceService } from '../attendance/attendance.service';
 
 const ADMIN_ROLES = ['admin', 'hr_manager'];
 const APPROVER_ROLES = ['approver', 'branch_approver'];
@@ -17,13 +19,18 @@ export class LeavesService {
   constructor(
     private firebaseService: FirebaseService,
     private leaveBalanceService: LeaveBalanceService,
+    private attendanceService: AttendanceService,
   ) {}
 
   async create(dto: CreateLeaveDto, createdBy: string) {
+    if (dto.leaveType === 'sick' && (!dto.attachments || dto.attachments.length === 0)) {
+      throw new BadRequestException('Medical report attachment is required for sick leave');
+    }
     const db = this.firebaseService.getFirestore();
     const ref = db.collection('leaves').doc();
     const data = {
       ...dto,
+      attachments: dto.attachments || [],
       status: 'pending',
       createdBy,
       createdAt: new Date(),
@@ -139,6 +146,14 @@ export class LeavesService {
       delete dto.rejectedReason;
     }
 
+    // Block approving a sick leave that has no medical report
+    if (dto.status === 'approved' && existing.leaveType === 'sick') {
+      const existingAttachments: any[] = existing.attachments || [];
+      if (existingAttachments.length === 0) {
+        throw new BadRequestException('Cannot approve sick leave without a medical report attachment');
+      }
+    }
+
     const wasApproved = existing.status === 'approved';
     const nowApproved = dto.status === 'approved';
     const nowRejected = dto.status === 'rejected';
@@ -159,14 +174,17 @@ export class LeavesService {
         existing.totalDays,
         leaveYear,
       );
+      // Auto-create attendance records for each day of the approved leave
+      await this.createLeaveAttendanceRecords(existing, requesterId);
     } else if (wasApproved && (nowRejected || dto.status === 'pending')) {
-      // Un-approved → restore balance
+      // Un-approved → restore balance and remove the generated attendance records
       await this.leaveBalanceService.restoreBalance(
         existing.employeeId,
         existing.leaveType,
         existing.totalDays,
         leaveYear,
       );
+      await this.removeLeaveAttendanceRecords(existing.id ?? id, existing.employeeId);
     }
 
     return { id, ...existing, ...data };
@@ -192,6 +210,44 @@ export class LeavesService {
     return { deleted: true };
   }
 
+  /** Upload an attachment file to Firebase Storage and return its metadata (no leave ID needed) */
+  async uploadAttachment(file: Express.Multer.File) {
+    if (!file) throw new BadRequestException('No file provided');
+    const ext = file.originalname.includes('.') ? file.originalname.split('.').pop() : '';
+    const storagePath = `medical-reports/pending/${uuidv4()}${ext ? '.' + ext : ''}`;
+    const url = await this.firebaseService.uploadToStorage(file.buffer, file.mimetype, storagePath);
+    return { url, name: file.originalname, mimeType: file.mimetype };
+  }
+
+  /** Upload a medical report to an existing leave and append it to the attachments array */
+  async uploadMedicalReport(
+    id: string,
+    file: Express.Multer.File,
+    requesterId: string,
+    requesterRole: string,
+    accessType: string = '',
+  ) {
+    if (!file) throw new BadRequestException('No file provided');
+    const db = this.firebaseService.getFirestore();
+    const doc = await db.collection('leaves').doc(id).get();
+    if (!doc.exists) throw new NotFoundException('Leave request not found');
+    const existing = doc.data() as any;
+
+    if (!isAdmin(requesterRole, accessType)) {
+      if (existing.employeeId !== requesterId && existing.createdBy !== requesterId) {
+        throw new ForbiddenException('You can only upload attachments for your own leave requests');
+      }
+    }
+
+    const ext = file.originalname.includes('.') ? file.originalname.split('.').pop() : '';
+    const storagePath = `medical-reports/${id}/${uuidv4()}${ext ? '.' + ext : ''}`;
+    const url = await this.firebaseService.uploadToStorage(file.buffer, file.mimetype, storagePath);
+    const attachment = { name: file.originalname, url, mimeType: file.mimetype, uploadedAt: new Date() };
+    const updatedAttachments = [...(existing.attachments || []), attachment];
+    await db.collection('leaves').doc(id).update({ attachments: updatedAttachments, updatedAt: new Date() });
+    return { id, attachment, attachments: updatedAttachments };
+  }
+
   /** Look up the branch associated with a user from systemUsers / users collection */
   private async getUserBranch(userId: string): Promise<string | null> {
     const db = this.firebaseService.getFirestore();
@@ -206,5 +262,93 @@ export class LeavesService {
       return d?.branch || d?.employeeBranch || null;
     }
     return null;
+  }
+
+  /**
+   * Map leave type to the correct attendance status.
+   * annual, casual, sick → 'on_leave'
+   * unpaid → 'unpaid_leave'
+   */
+  private leaveTypeToAttendanceStatus(leaveType: string): 'on_leave' | 'unpaid_leave' {
+    return leaveType === 'unpaid' ? 'unpaid_leave' : 'on_leave';
+  }
+
+  /**
+   * Enumerate every calendar date between startDate and endDate inclusive (YYYY-MM-DD).
+   */
+  private dateRange(startDate: string, endDate: string): string[] {
+    const dates: string[] = [];
+    const current = new Date(startDate + 'T00:00:00');
+    const end = new Date(endDate + 'T00:00:00');
+    while (current <= end) {
+      dates.push(current.toISOString().substring(0, 10));
+      current.setDate(current.getDate() + 1);
+    }
+    return dates;
+  }
+
+  /**
+   * Create one attendance record per leave day when a leave is approved.
+   * Skips any date that already has an attendance record for this employee.
+   * Stores leaveId on each record so they can be removed if the leave is un-approved.
+   */
+  private async createLeaveAttendanceRecords(leave: any, approvedBy: string): Promise<void> {
+    const db = this.firebaseService.getFirestore();
+    const status = this.leaveTypeToAttendanceStatus(leave.leaveType);
+    const dates = this.dateRange(leave.startDate, leave.endDate ?? leave.startDate);
+
+    // Fetch employee doc to get employeeCode and category (not always stored on the leave)
+    let employeeCode = leave.employeeCode ?? '';
+    let employeeCategory = leave.employeeCategory ?? '';
+    if (!employeeCode || !employeeCategory) {
+      const empDoc = await db.collection('employees').doc(leave.employeeId).get();
+      if (empDoc.exists) {
+        const emp = empDoc.data() as any;
+        if (!employeeCode) employeeCode = emp.employeeCode ?? '';
+        if (!employeeCategory) employeeCategory = emp.category ?? '';
+      }
+    }
+
+    for (const date of dates) {
+      // Skip if attendance record already exists for this date
+      const existing = await db
+        .collection('attendance')
+        .where('employeeId', '==', leave.employeeId)
+        .where('date', '==', date)
+        .limit(1)
+        .get();
+      if (!existing.empty) continue;
+
+      const dto: any = {
+        employeeId: leave.employeeId,
+        employeeCode,
+        employeeName: leave.employeeName ?? '',
+        branch: leave.employeeBranch ?? '',
+        category: employeeCategory,
+        date,
+        status,
+        leaveId: leave.id,
+        leaveType: leave.leaveType,
+      };
+
+      await this.attendanceService.create(dto, approvedBy);
+    }
+  }
+
+  /**
+   * Remove attendance records that were auto-generated for a specific leave
+   * when that leave is un-approved or rejected.
+   */
+  private async removeLeaveAttendanceRecords(leaveId: string, employeeId: string): Promise<void> {
+    const db = this.firebaseService.getFirestore();
+    const snap = await db
+      .collection('attendance')
+      .where('employeeId', '==', employeeId)
+      .where('leaveId', '==', leaveId)
+      .get();
+
+    const batch = db.batch();
+    snap.docs.forEach((doc) => batch.delete(doc.ref));
+    if (!snap.empty) await batch.commit();
   }
 }

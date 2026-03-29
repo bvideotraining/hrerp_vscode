@@ -23,6 +23,13 @@ export type LeaveType =
 
 export type LeaveStatus = 'pending' | 'approved' | 'rejected';
 
+export interface LeaveAttachment {
+  name: string;
+  url: string;
+  mimeType?: string;
+  uploadedAt?: any;
+}
+
 export interface LeaveRequest {
   id: string;
   employeeId: string;
@@ -36,6 +43,7 @@ export interface LeaveRequest {
   status: LeaveStatus;
   approvedBy?: string;
   rejectedReason?: string;
+  attachments?: LeaveAttachment[];
   createdAt: any;
   updatedAt: any;
 }
@@ -49,6 +57,7 @@ export interface CreateLeavePayload {
   endDate: string;
   totalDays: number;
   reason?: string;
+  attachments?: LeaveAttachment[];
 }
 
 export const LEAVE_TYPE_LABELS: Record<LeaveType, string> = {
@@ -127,6 +136,41 @@ export const leavesService = {
 
   remove(id: string): Promise<{ deleted: boolean }> {
     return apiFetch(`/api/leaves/${id}`, { method: 'DELETE' });
+  },
+
+  uploadAttachment(file: File): Promise<LeaveAttachment> {
+    const formData = new FormData();
+    formData.append('file', file);
+    return fetch(`${API_URL}/api/leaves/upload-attachment`, {
+      method: 'POST',
+      credentials: 'include',
+      body: formData,
+    }).then(async (res) => {
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ message: res.statusText }));
+        throw new Error(err.message || res.statusText);
+      }
+      return res.json();
+    });
+  },
+
+  uploadMedicalReport(
+    leaveId: string,
+    file: File,
+  ): Promise<{ id: string; attachment: LeaveAttachment; attachments: LeaveAttachment[] }> {
+    const formData = new FormData();
+    formData.append('file', file);
+    return fetch(`${API_URL}/api/leaves/${leaveId}/upload-medical-report`, {
+      method: 'POST',
+      credentials: 'include',
+      body: formData,
+    }).then(async (res) => {
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ message: res.statusText }));
+        throw new Error(err.message || res.statusText);
+      }
+      return res.json();
+    });
   },
 };
 

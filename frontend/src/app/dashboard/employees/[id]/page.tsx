@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { EmployeeData, EmployeeDocument } from '@/types/employee';
 import { useEmployee } from '@/hooks/use-employee';
-import { ArrowLeft, FileText, Download, Eye, X, FolderOpen, FileSpreadsheet } from 'lucide-react';
+import { ArrowLeft, FileText, Download, Eye, X, FolderOpen, FileSpreadsheet, Image as ImageIcon } from 'lucide-react';
 import { EmployeeDocumentsModal } from '@/components/modals/EmployeeDocumentsModal';
 
 /* ─── Inline attachment viewer modal ─────────────────────────────────── */
@@ -31,7 +31,7 @@ function AttachmentViewer({
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
           <div className="flex items-center gap-3">
-            {isImage ? <Image className="h-5 w-5 text-blue-600" /> : <FileText className="h-5 w-5 text-blue-600" />}
+            {isImage ? <ImageIcon className="h-5 w-5 text-blue-600" /> : <FileText className="h-5 w-5 text-blue-600" />}
             <div>
               <p className="font-semibold text-slate-900">{doc.type}</p>
               <p className="text-xs text-slate-500">{doc.file}</p>

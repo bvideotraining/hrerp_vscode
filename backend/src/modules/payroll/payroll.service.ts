@@ -7,10 +7,14 @@ import {
 import { FirebaseService } from '@config/firebase/firebase.service';
 import { PayrollDataSourceService } from './services/payroll-data-source.service';
 import { PayrollCalculationService } from './services/payroll-calculation.service';
+import { CashAdvancesService } from '@modules/cash-advances/cash-advances.service';
+import { OrganizationService } from '@modules/organization/organization.service';
 import {
   GeneratePayrollDto,
   UpdatePayrollDto,
   PayrollFilterDto,
+  BatchGeneratePayrollDto,
+  BatchGenerateResultDto,
 } from './dto/payroll.dto';
 
 @Injectable()
@@ -19,6 +23,8 @@ export class PayrollService {
     private firebaseService: FirebaseService,
     private dataSource: PayrollDataSourceService,
     private calculator: PayrollCalculationService,
+    private cashAdvancesService: CashAdvancesService,
+    private organizationService: OrganizationService,
   ) {}
 
   private get db() {
@@ -156,6 +162,7 @@ export class PayrollService {
       attendanceSummary: {
         lateMinutes: breakdown.lateMinutes,
         deductionDays: breakdown.attendanceDeductionDays,
+        absenceDays: breakdown.attendanceAbsenceDays,
       },
       leaveSummary: {
         unpaidDays: breakdown.unpaidLeaveDays,
@@ -227,6 +234,7 @@ export class PayrollService {
       attendanceSummary: {
         lateMinutes: breakdown.lateMinutes,
         deductionDays: breakdown.attendanceDeductionDays,
+        absenceDays: breakdown.attendanceAbsenceDays,
       },
       leaveSummary: { unpaidDays: breakdown.unpaidLeaveDays },
       notes: dto.notes !== undefined ? dto.notes : current.notes,
@@ -252,7 +260,183 @@ export class PayrollService {
 
     const now = new Date().toISOString();
     await ref.update({ status: 'published', publishedAt: now, updatedAt: now });
+
+    // Mark any cash-advance installment due this month as paid
+    if (current.employeeId && current.payrollMonth) {
+      await this.cashAdvancesService
+        .markInstallmentPaid(current.employeeId, current.payrollMonth)
+        .catch(() => { /* non-critical — advance may have no due installment */ });
+    }
+
     return { id, ...current, status: 'published', publishedAt: now, updatedAt: now };
+  }
+
+  // ─── BATCH GENERATE ──────────────────────────────────────────────────────
+
+  /**
+   * Generate payroll for ALL employees that have a salary config for the
+   * derived payrollMonth (YYYY-MM from the month range's startDate).
+   *
+   * Already-published records are skipped (not overwritten).
+   * Failures are collected and returned in the result; the batch continues
+   * for all remaining employees regardless of individual errors.
+   */
+  async generateBatch(dto: BatchGeneratePayrollDto): Promise<BatchGenerateResultDto> {
+    // 1. Resolve month range
+    const monthRanges = await this.organizationService.getMonthRanges();
+    const range = (monthRanges as any[]).find((r: any) => r.id === dto.monthRangeId);
+    if (!range) {
+      throw new NotFoundException(`Month range '${dto.monthRangeId}' not found`);
+    }
+
+    const startDate: string = range.startDate;
+    const endDate: string = range.endDate;
+    const monthName: string = range.monthName ?? '';
+
+    // Derive the YYYY-MM key used by month-keyed collections (salary_config, bonuses, etc.)
+    // Use endDate because month ranges often start in the previous month
+    // (e.g. "March 2026" range: 2026-02-25 → 2026-03-24, endDate gives "2026-03")
+    const payrollMonth = endDate.substring(0, 7); // e.g. "2026-03"
+
+    // 2. Find all salary config docs for this payrollMonth to determine employee scope
+    const salaryConfigSnap = await this.db
+      .collection('salary_configs')
+      .where('month', '==', payrollMonth)
+      .get();
+
+    if (salaryConfigSnap.empty) {
+      return {
+        payrollMonth,
+        period: { startDate, endDate, monthName },
+        succeeded: [],
+        failed: [],
+        skipped: [],
+      };
+    }
+
+    // Collect unique employee IDs from salary config docs
+    const employeeMap = new Map<string, string>(); // employeeId → employeeName
+    for (const doc of salaryConfigSnap.docs) {
+      const d = doc.data() as any;
+      if (d.employeeId) {
+        employeeMap.set(d.employeeId, d.employeeName ?? d.employeeId);
+      }
+    }
+
+    // 3. Run generation for each employee in parallel (allSettled = no short-circuit)
+    const employeeIds = Array.from(employeeMap.keys());
+
+    const results = await Promise.allSettled(
+      employeeIds.map(async (employeeId) => {
+        // Check if a published record already exists — skip without overwriting
+        const existingDoc = await this.db
+          .collection('payroll')
+          .doc(this.docId(employeeId, payrollMonth))
+          .get();
+
+        if (existingDoc.exists && (existingDoc.data() as any)?.status === 'published') {
+          return { employeeId, skipped: true as const };
+        }
+
+        // Run single-employee generation with full period awareness
+        await this.generateInternal(employeeId, payrollMonth, startDate, endDate);
+        return { employeeId, skipped: false as const };
+      }),
+    );
+
+    // 4. Aggregate results
+    const succeeded: string[] = [];
+    const failed: { employeeId: string; employeeName: string; error: string }[] = [];
+    const skipped: string[] = [];
+
+    for (let i = 0; i < results.length; i++) {
+      const employeeId = employeeIds[i];
+      const result = results[i];
+      if (result.status === 'fulfilled') {
+        if (result.value.skipped) {
+          skipped.push(employeeId);
+        } else {
+          succeeded.push(employeeId);
+        }
+      } else {
+        failed.push({
+          employeeId,
+          employeeName: employeeMap.get(employeeId) ?? employeeId,
+          error: result.reason?.message ?? 'Unknown error',
+        });
+      }
+    }
+
+    return { payrollMonth, period: { startDate, endDate, monthName }, succeeded, failed, skipped };
+  }
+
+  /**
+   * Internal helper: generate (or overwrite draft) for a single employee
+   * using an explicit date range for period-aware data collection.
+   */
+  private async generateInternal(
+    employeeId: string,
+    payrollMonth: string,
+    periodStart: string,
+    periodEnd: string,
+  ): Promise<void> {
+    const source = await this.dataSource.collectFor(
+      employeeId,
+      payrollMonth,
+      undefined,
+      undefined,
+      periodStart,
+      periodEnd,
+    );
+
+    const breakdown = this.calculator.calculate(source);
+    const id = this.docId(employeeId, payrollMonth);
+    const now = new Date().toISOString();
+
+    const payrollData = {
+      employeeId: source.employeeId,
+      employeeCode: source.employeeCode,
+      employeeName: source.employeeName,
+      department: source.department,
+      branch: source.branch,
+      payrollMonth,
+      periodStart,
+      periodEnd,
+      basicSalary: breakdown.basicSalary,
+      increaseAmount: breakdown.increaseAmount,
+      grossSalary: breakdown.grossSalary,
+      housingAllowance: breakdown.housingAllowance,
+      transportationAllowance: breakdown.transportationAllowance,
+      mealAllowance: breakdown.mealAllowance,
+      otherAllowances: breakdown.otherAllowances,
+      totalAllowances: breakdown.totalAllowances,
+      bonuses: breakdown.bonuses,
+      totalSalary: breakdown.totalSalary,
+      medicalInsurance: breakdown.medicalInsurance,
+      socialInsurance: breakdown.socialInsurance,
+      lateDeduction: breakdown.lateDeduction,
+      absenceDeduction: breakdown.absenceDeduction,
+      cashAdvance: breakdown.cashAdvance,
+      totalDeductions: breakdown.totalDeductions,
+      netSalary: breakdown.netSalary,
+      dailyRate: breakdown.dailyRate,
+      attendanceSummary: {
+        lateMinutes: breakdown.lateMinutes,
+        deductionDays: breakdown.attendanceDeductionDays,
+        absenceDays: breakdown.attendanceAbsenceDays,
+      },
+      leaveSummary: { unpaidDays: breakdown.unpaidLeaveDays },
+      status: 'draft',
+      notes: null,
+      updatedAt: now,
+    };
+
+    const existingDoc = await this.db.collection('payroll').doc(id).get();
+    if (existingDoc.exists) {
+      await this.db.collection('payroll').doc(id).update(payrollData);
+    } else {
+      await this.db.collection('payroll').doc(id).set({ ...payrollData, createdAt: now });
+    }
   }
 
   // ─── DELETE ──────────────────────────────────────────────────────────────

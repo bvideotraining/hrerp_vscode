@@ -8,6 +8,7 @@ import { CreateUserDto, UpdateUserDto } from './dto/user.dto';
 import { CreateRoleDto } from './dto/role.dto';
 import { SystemConfigDto } from './dto/config.dto';
 import { NotificationConfigDto, ResetSystemDto } from './dto/notification-config.dto';
+import { SaveDashboardLayoutDto } from './dto/dashboard-layout.dto';
 
 @Controller('api/settings')
 @UseGuards(JwtAuthGuard)
@@ -87,4 +88,23 @@ export class SettingsController {
   // ─── System Reset ──────────────────────────────────────
   @Post('reset')
   resetSystem(@Body() dto: ResetSystemDto) { return this.settingsService.resetSystem(dto); }
+
+  // ─── Dashboard Layouts ─────────────────────────────────
+  @Get('dashboard-layouts/:roleId')
+  getDashboardLayout(@Param('roleId') roleId: string) {
+    return this.settingsService.getDashboardLayout(roleId);
+  }
+
+  @Put('dashboard-layouts/:roleId')
+  saveDashboardLayout(
+    @Param('roleId') roleId: string,
+    @Body() dto: SaveDashboardLayoutDto,
+  ) {
+    return this.settingsService.saveDashboardLayout(roleId, dto);
+  }
+
+  @Post('dashboard-layouts/:roleId/ai-suggest')
+  aiSuggestWidgets(@Param('roleId') roleId: string, @Body() body: any) {
+    return this.settingsService.aiSuggestWidgets(roleId, body.role);
+  }
 }

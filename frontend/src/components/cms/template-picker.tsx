@@ -1,7 +1,7 @@
 'use client';
 
 import { PAGE_TEMPLATES, PageTemplate } from './page-templates';
-import { ArrowLeft, FileText, X } from 'lucide-react';
+import { FileText, X } from 'lucide-react';
 
 interface TemplatPickerProps {
   onSelect: (template: PageTemplate) => void;

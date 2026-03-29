@@ -89,7 +89,7 @@ export default function EditEmployeePage({ params }: EditEmployeePageProps) {
 
           <EmployeeForm
             initialData={employee as any}
-            onSubmit={handleSubmit}
+            onSubmit={handleSubmit as any}
             onCancel={handleCancel}
             isLoading={loading}
           />

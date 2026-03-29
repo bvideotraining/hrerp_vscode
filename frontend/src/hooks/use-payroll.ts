@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { payrollService } from '@/lib/services/payroll.service';
-import type { PayrollRecord, PayrollFilters, PayrollListResponse } from '@/types/payroll';
+import type { PayrollRecord, PayrollFilters, PayrollListResponse, BatchGenerateResult } from '@/types/payroll';
 
 interface UsePayrollReturn {
   records: PayrollRecord[];
@@ -17,6 +17,8 @@ interface UsePayrollReturn {
   reload: () => void;
   publish: (id: string) => Promise<void>;
   remove: (id: string) => Promise<void>;
+  generateBatch: (monthRangeId: string) => Promise<BatchGenerateResult>;
+  batchLoading: boolean;
   statusMsg: string;
   clearStatus: () => void;
 }
@@ -29,6 +31,7 @@ export function usePayroll(initialFilters: PayrollFilters = {}): UsePayrollRetur
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [statusMsg, setStatusMsg] = useState('');
+  const [batchLoading, setBatchLoading] = useState(false);
   const loadingRef = useRef(false);
 
   const flash = (msg: string) => {
@@ -78,6 +81,18 @@ export function usePayroll(initialFilters: PayrollFilters = {}): UsePayrollRetur
     reload();
   };
 
+  const generateBatch = async (monthRangeId: string): Promise<BatchGenerateResult> => {
+    setBatchLoading(true);
+    try {
+      const result = await payrollService.generateBatch(monthRangeId);
+      flash(`Payroll generated: ${result.succeeded.length} succeeded, ${result.failed.length} failed, ${result.skipped.length} skipped`);
+      reload();
+      return result;
+    } finally {
+      setBatchLoading(false);
+    }
+  };
+
   return {
     records: response.items,
     total: response.total,
@@ -91,6 +106,8 @@ export function usePayroll(initialFilters: PayrollFilters = {}): UsePayrollRetur
     reload,
     publish,
     remove,
+    generateBatch,
+    batchLoading,
     statusMsg,
     clearStatus: () => setStatusMsg(''),
   };

@@ -1,6 +1,6 @@
 ﻿'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { ProtectedRoute } from '@/components/auth/protected-route';
 import DashboardLayout from '@/components/dashboard/layout';
@@ -13,6 +13,7 @@ import { useAuth } from '@/context/auth-context';
 import { employeeService } from '@/lib/services/employee.service';
 import { auditLoggingService } from '@/lib/services/audit-logging.service';
 import { Plus, Download, Upload, FileSpreadsheet, FileText, X, AlertCircle, Loader2 } from 'lucide-react';
+import { EmployeeImportGuideModal } from '@/components/employees/import-guide-modal';
 
 export default function EmployeesPage() {
   return (
@@ -33,9 +34,9 @@ function EmployeesContent() {
   const [employees, setEmployees] = useState<EmployeeData[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [showExportMenu, setShowExportMenu] = useState(false);
+  const [showImportGuide, setShowImportGuide] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
   const [importErrors, setImportErrors] = useState<string[]>([]);
-  const importInputRef = useRef<HTMLInputElement>(null);
 
   // Close export menu when clicking outside
   useEffect(() => {
@@ -181,12 +182,8 @@ function EmployeesContent() {
   };
 
   /* â”€â”€â”€ Import handler â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
-  const handleImportFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    // Reset input so same file can be re-selected
-    e.target.value = '';
-
+  const handleImportFile = async (file: File) => {
+    setShowImportGuide(false);
     setImportErrors([]);
     setIsImporting(true);
 
@@ -272,15 +269,8 @@ function EmployeesContent() {
           <div className="flex gap-3 items-center">
 
             {/* Import button */}
-            <input
-              ref={importInputRef}
-              type="file"
-              accept=".xlsx,.xls,.csv"
-              className="hidden"
-              onChange={handleImportFile}
-            />
             <button
-              onClick={() => importInputRef.current?.click()}
+              onClick={() => setShowImportGuide(true)}
               disabled={isImporting}
               className="px-4 py-2 border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50 transition-colors font-medium flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
               title="Import from Excel"
@@ -383,6 +373,13 @@ function EmployeesContent() {
         )}
       </div>
       <ToastContainer toasts={toasts} onDismiss={dismiss} />
+      {showImportGuide && (
+        <EmployeeImportGuideModal
+          onClose={() => setShowImportGuide(false)}
+          onFileImport={handleImportFile}
+          isImporting={isImporting}
+        />
+      )}
     </>
   );
 }

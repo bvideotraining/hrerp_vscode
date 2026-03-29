@@ -1,10 +1,23 @@
-import { IsString, IsOptional, IsIn, IsDateString, IsNumber, Min } from 'class-validator';
+import { IsString, IsOptional, IsIn, IsDateString, IsNumber, Min, IsArray, ValidateNested } from 'class-validator';
+import { Type } from 'class-transformer';
 
 export const LEAVE_TYPES = ['annual', 'casual', 'sick', 'death', 'maternity', 'unpaid', 'emergency', 'paternity', 'other'] as const;
 export type LeaveType = (typeof LEAVE_TYPES)[number];
 
 export const LEAVE_STATUSES = ['pending', 'approved', 'rejected'] as const;
 export type LeaveStatus = (typeof LEAVE_STATUSES)[number];
+
+export class AttachmentDto {
+  @IsString()
+  name: string;
+
+  @IsString()
+  url: string;
+
+  @IsOptional()
+  @IsString()
+  mimeType?: string;
+}
 
 export class CreateLeaveDto {
   @IsString()
@@ -33,6 +46,12 @@ export class CreateLeaveDto {
   @IsOptional()
   @IsString()
   employeeBranch?: string;
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => AttachmentDto)
+  attachments?: AttachmentDto[];
 }
 
 export class UpdateLeaveDto {
@@ -68,4 +87,10 @@ export class UpdateLeaveDto {
   @IsOptional()
   @IsString()
   reason?: string;
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => AttachmentDto)
+  attachments?: AttachmentDto[];
 }

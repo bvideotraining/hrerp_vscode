@@ -4,6 +4,7 @@ import type {
   PayrollFilters,
   GeneratePayrollPayload,
   UpdatePayrollPayload,
+  BatchGenerateResult,
 } from '@/types/payroll';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3003';
@@ -63,6 +64,13 @@ export const payrollService = {
   remove(id: string): Promise<{ id: string }> {
     return apiFetch<{ id: string }>(`/api/payroll/${encodeURIComponent(id)}`, {
       method: 'DELETE',
+    });
+  },
+
+  generateBatch(monthRangeId: string): Promise<BatchGenerateResult> {
+    return apiFetch<BatchGenerateResult>('/api/payroll/generate-batch', {
+      method: 'POST',
+      body: JSON.stringify({ monthRangeId }),
     });
   },
 };

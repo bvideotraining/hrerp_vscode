@@ -28,7 +28,6 @@ import {
   Minus,
   Type,
   Palette,
-  Upload,
 } from 'lucide-react';
 
 interface Props {

@@ -1,6 +1,6 @@
 ﻿'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ProtectedRoute } from '@/components/auth/protected-route';
 import DashboardLayout from '@/components/dashboard/layout';
@@ -19,7 +19,6 @@ import {
   Type,
   Footprints,
   Settings2,
-  Image as ImageIcon,
   FormInput,
 } from 'lucide-react';
 import HeroBlockEditor from '@/components/cms/hero-block-editor';

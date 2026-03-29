@@ -3,6 +3,7 @@ import { FirebaseService } from '@config/firebase/firebase.service';
 import {
   CreateSalaryIncreaseDto,
   UpdateSalaryIncreaseDto,
+  BulkSaveIncreaseDto,
 } from './dto/salary-increase.dto';
 
 @Injectable()
@@ -13,10 +14,13 @@ export class SalaryIncreasesService {
     return this.firebaseService.getFirestore();
   }
 
-  async findAll(employeeId?: string, search?: string) {
+  async findAll(employeeId?: string, search?: string, year?: string, branch?: string) {
     let query: FirebaseFirestore.Query = this.db.collection('salary_increases');
     if (employeeId) {
       query = query.where('employeeId', '==', employeeId);
+    }
+    if (branch) {
+      query = query.where('branch', '==', branch);
     }
     const snap = await query.get();
     let records = snap.docs.map((doc) => ({ id: doc.id, ...doc.data() })) as any[];
@@ -30,8 +34,13 @@ export class SalaryIncreasesService {
       );
     }
 
+    // Filter by year on applyMonth field (YYYY-MM)
+    if (year) {
+      records = records.filter((r) => (r.applyMonth || '').startsWith(year));
+    }
+
     return records.sort((a: any, b: any) =>
-      (a.effectiveDate || '').localeCompare(b.effectiveDate || ''),
+      (a.applyMonth || a.effectiveDate || '').localeCompare(b.applyMonth || b.effectiveDate || ''),
     );
   }
 
@@ -43,8 +52,8 @@ export class SalaryIncreasesService {
 
   /**
    * Get all effective increases for an employee up to and including the given payroll month.
-   * payrollMonth is 'YYYY-MM'. effectiveDate is 'YYYY-MM-DD'.
-   * An increase applies when its effectiveDate month <= payrollMonth.
+   * payrollMonth is 'YYYY-MM'.
+   * An increase applies when its applyMonth <= payrollMonth (falling back to effectiveDate month).
    */
   async getEffectiveIncreases(employeeId: string, payrollMonth: string): Promise<any[]> {
     const snap = await this.db
@@ -52,11 +61,14 @@ export class SalaryIncreasesService {
       .where('employeeId', '==', employeeId)
       .get();
 
-    // effectiveDate threshold: payrollMonth is 'YYYY-MM', so cutoff = payrollMonth + '-31'
-    const cutoff = `${payrollMonth}-31`;
     return snap.docs
       .map((doc) => ({ id: doc.id, ...doc.data() }))
-      .filter((r: any) => (r.effectiveDate || '') <= cutoff);
+      .filter((r: any) => {
+        // Use applyMonth (YYYY-MM) if present, otherwise fall back to effectiveDate (YYYY-MM-DD) month
+        const scheduleMonth: string =
+          r.applyMonth || (r.effectiveDate ? (r.effectiveDate as string).slice(0, 7) : '');
+        return scheduleMonth <= payrollMonth;
+      });
   }
 
   /** Sum of all effective increase amounts for an employee in a given payroll month */
@@ -69,6 +81,8 @@ export class SalaryIncreasesService {
     const ref = this.db.collection('salary_increases').doc();
     const data = {
       ...dto,
+      // Derive effectiveDate for backward compatibility with payroll resolution
+      effectiveDate: `${dto.applyMonth}-01`,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
@@ -81,7 +95,11 @@ export class SalaryIncreasesService {
     const existing = await ref.get();
     if (!existing.exists) throw new NotFoundException(`Salary increase '${id}' not found`);
     const current = existing.data() as any;
-    const updateData = { ...dto, updatedAt: new Date().toISOString() };
+    const updateData: any = { ...dto, updatedAt: new Date().toISOString() };
+    // Re-derive effectiveDate if applyMonth is being changed
+    if (dto.applyMonth) {
+      updateData.effectiveDate = `${dto.applyMonth}-01`;
+    }
     await ref.update(updateData);
     return { id, ...current, ...updateData };
   }
@@ -92,5 +110,47 @@ export class SalaryIncreasesService {
     if (!existing.exists) throw new NotFoundException(`Salary increase '${id}' not found`);
     await ref.delete();
     return { id };
+  }
+
+  /** Batch create / update / delete in a single request */
+  async bulkSave(dto: BulkSaveIncreaseDto) {
+    const results: { created: any[]; updated: any[]; deleted: string[]; errors: any[] } = {
+      created: [],
+      updated: [],
+      deleted: [],
+      errors: [],
+    };
+
+    // Creates
+    for (const item of dto.creates || []) {
+      try {
+        const created = await this.create(item);
+        results.created.push(created);
+      } catch (e: any) {
+        results.errors.push({ action: 'create', employeeId: item.employeeId, error: e.message });
+      }
+    }
+
+    // Updates
+    for (const item of dto.updates || []) {
+      try {
+        const updated = await this.update(item.id, item.data);
+        results.updated.push(updated);
+      } catch (e: any) {
+        results.errors.push({ action: 'update', id: item.id, error: e.message });
+      }
+    }
+
+    // Deletes
+    for (const id of dto.deletes || []) {
+      try {
+        await this.remove(id);
+        results.deleted.push(id);
+      } catch (e: any) {
+        results.errors.push({ action: 'delete', id, error: e.message });
+      }
+    }
+
+    return results;
   }
 }

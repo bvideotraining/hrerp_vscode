@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Save,
   Search,
@@ -16,6 +16,9 @@ import {
   Lock,
   User,
   Banknote,
+  FileSpreadsheet,
+  FileText,
+  ChevronDown,
 } from 'lucide-react';
 import { useAuth } from '@/context/auth-context';
 import { employeeService } from '@/lib/services/employee.service';
@@ -325,16 +328,72 @@ interface HistoryTableProps {
 function SkeletonHistoryRow() {
   return (
     <tr className="border-b border-slate-100">
-      {Array.from({ length: 8 }).map((_, i) => (
+      {Array.from({ length: 9 }).map((_, i) => (
         <td key={i} className="px-4 py-3">
           <div
             className="h-4 bg-slate-200 rounded animate-pulse"
-            style={{ width: i === 0 ? '70%' : '50%' }}
+            style={{ width: i === 0 ? '30%' : i === 1 ? '70%' : '50%' }}
           />
         </td>
       ))}
     </tr>
   );
+}
+
+async function exportToExcel(rows: SalaryConfig[]) {
+  const XLSX = await import('xlsx');
+  const data = rows.map((cfg) => ({
+    'Emp Code': cfg.employeeCode,
+    'Emp Name': cfg.employeeName,
+    Month: cfg.month === '—' || !cfg.month ? '—' : monthLabel(cfg.month),
+    'Basic Salary': cfg.basicSalary ?? 0,
+    'Increase Amount': cfg.increaseAmount ?? 0,
+    'Gross Salary': cfg.grossSalary ?? 0,
+    'Bonus Items':
+      (cfg.allowances || []).map((a) => `${a.name}: ${fmtAmt(a.amount)}`).join(', ') || '—',
+    'Deduction Items':
+      (cfg.deductions || []).map((d) => `${d.name}: ${fmtAmt(d.amount)}`).join(', ') || '—',
+    'Total Salary': cfg.totalSalary ?? 0,
+  }));
+  const ws = XLSX.utils.json_to_sheet(data);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Salary Config History');
+  XLSX.writeFile(wb, 'salary-config-history.xlsx');
+}
+
+async function exportToPdf(rows: SalaryConfig[]) {
+  const { default: jsPDF } = await import('jspdf');
+  const { default: autoTable } = await import('jspdf-autotable');
+  const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' });
+  doc.setFontSize(13);
+  doc.text('Salary Configurations History', 40, 36);
+  autoTable(doc, {
+    startY: 52,
+    head: [
+      ['Emp Code', 'Emp Name', 'Month', 'Basic Salary', 'Increase', 'Gross Salary', 'Bonus Items', 'Deduction Items', 'Total Salary'],
+    ],
+    body: rows.map((cfg) => [
+      cfg.employeeCode,
+      cfg.employeeName,
+      cfg.month === '—' || !cfg.month ? '—' : monthLabel(cfg.month),
+      fmtAmt(cfg.basicSalary),
+      (cfg.increaseAmount ?? 0) > 0 ? `+${fmtAmt(cfg.increaseAmount)}` : '—',
+      fmtAmt(cfg.grossSalary),
+      (cfg.allowances || []).map((a) => `${a.name}: ${fmtAmt(a.amount)}`).join(', ') || '—',
+      (cfg.deductions || []).map((d) => `${d.name}: ${fmtAmt(d.amount)}`).join(', ') || '—',
+      fmtAmt(cfg.totalSalary),
+    ]),
+    styles: { fontSize: 7.5, cellPadding: 4 },
+    headStyles: { fillColor: [51, 65, 85], textColor: 255, fontStyle: 'bold' },
+    alternateRowStyles: { fillColor: [248, 250, 252] },
+    columnStyles: {
+      3: { halign: 'right' },
+      4: { halign: 'right' },
+      5: { halign: 'right' },
+      8: { halign: 'right', fontStyle: 'bold' },
+    },
+  });
+  doc.save('salary-config-history.pdf');
 }
 
 function HistoryTable({
@@ -346,6 +405,10 @@ function HistoryTable({
   onDelete,
   isAdmin,
 }: HistoryTableProps) {
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [exportOpen, setExportOpen] = useState(false);
+  const exportRef = useRef<HTMLDivElement>(null);
+
   const filtered = search
     ? records.filter(
         (r) =>
@@ -355,28 +418,123 @@ function HistoryTable({
       )
     : records;
 
+  const allChecked = filtered.length > 0 && filtered.every((r) => selectedIds.has(r.id));
+  const someChecked = filtered.some((r) => selectedIds.has(r.id));
+
+  function toggleAll() {
+    if (allChecked) {
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        filtered.forEach((r) => next.delete(r.id));
+        return next;
+      });
+    } else {
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        filtered.forEach((r) => next.add(r.id));
+        return next;
+      });
+    }
+  }
+
+  function toggleRow(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    function handler(e: MouseEvent) {
+      if (exportRef.current && !exportRef.current.contains(e.target as Node)) {
+        setExportOpen(false);
+      }
+    }
+    if (exportOpen) document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [exportOpen]);
+
+  const selectedRows = filtered.filter((r) => selectedIds.has(r.id));
+  const exportCount = selectedRows.length;
+
   return (
     <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
       {/* Header */}
       <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between gap-4 flex-wrap">
-        <h3 className="text-sm font-semibold text-slate-900">Salary Configurations History</h3>
-        <div className="relative w-64">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
-          <input
-            type="text"
-            placeholder="Filter history…"
-            value={search}
-            onChange={(e) => onSearchChange(e.target.value)}
-            className="w-full pl-9 pr-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
-          />
+        <div className="flex items-center gap-3">
+          <h3 className="text-sm font-semibold text-slate-900">Salary Configurations History</h3>
+          {exportCount > 0 && (
+            <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-medium">
+              {exportCount} selected
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* Export dropdown */}
+          <div className="relative" ref={exportRef}>
+            <button
+              onClick={() => setExportOpen((v) => !v)}
+              disabled={exportCount === 0}
+              title={exportCount === 0 ? 'Select records to export' : `Export ${exportCount} record(s)`}
+              className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg border transition-colors
+                disabled:opacity-40 disabled:cursor-not-allowed
+                enabled:border-slate-300 enabled:text-slate-700 enabled:hover:bg-slate-50 enabled:hover:border-slate-400"
+            >
+              <Download className="h-4 w-4" />
+              Export
+              <ChevronDown className={`h-3.5 w-3.5 transition-transform ${exportOpen ? 'rotate-180' : ''}`} />
+            </button>
+            {exportOpen && (
+              <div className="absolute right-0 mt-1.5 w-44 bg-white border border-slate-200 rounded-lg shadow-lg z-20 overflow-hidden">
+                <button
+                  onClick={() => { exportToExcel(selectedRows); setExportOpen(false); }}
+                  className="flex items-center gap-2.5 w-full px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition-colors"
+                >
+                  <FileSpreadsheet className="h-4 w-4 text-emerald-600" />
+                  Export as Excel
+                </button>
+                <button
+                  onClick={() => { exportToPdf(selectedRows); setExportOpen(false); }}
+                  className="flex items-center gap-2.5 w-full px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition-colors border-t border-slate-100"
+                >
+                  <FileText className="h-4 w-4 text-red-500" />
+                  Export as PDF
+                </button>
+              </div>
+            )}
+          </div>
+          {/* Search */}
+          <div className="relative w-64">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
+            <input
+              type="text"
+              placeholder="Filter history…"
+              value={search}
+              onChange={(e) => onSearchChange(e.target.value)}
+              className="w-full pl-9 pr-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
+            />
+          </div>
         </div>
       </div>
 
       {/* Table */}
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[900px]">
+        <table className="w-full min-w-[960px]">
           <thead className="bg-slate-50 border-b border-slate-200">
             <tr>
+              <th className="px-4 py-3 w-10">
+                <input
+                  type="checkbox"
+                  aria-label="Select all"
+                  checked={allChecked}
+                  ref={(el) => { if (el) el.indeterminate = !allChecked && someChecked; }}
+                  onChange={toggleAll}
+                  className="h-4 w-4 rounded border-slate-300 text-blue-600 cursor-pointer"
+                />
+              </th>
               <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">
                 Emp Code
               </th>
@@ -416,7 +574,7 @@ function HistoryTable({
               Array.from({ length: 5 }).map((_, i) => <SkeletonHistoryRow key={i} />)
             ) : filtered.length === 0 ? (
               <tr>
-                <td colSpan={10} className="px-4 py-16 text-center">
+                <td colSpan={isAdmin ? 11 : 10} className="px-4 py-16 text-center">
                   <div className="flex flex-col items-center gap-3 text-slate-400">
                     <Banknote className="h-10 w-10 text-slate-200" />
                     <p className="font-medium text-sm">No salary configurations found</p>
@@ -425,6 +583,7 @@ function HistoryTable({
               </tr>
             ) : (
               filtered.map((cfg) => {
+                const isChecked = selectedIds.has(cfg.id);
                 const allowanceText =
                   (cfg.allowances || [])
                     .map((a) => `${a.name}: ${fmtAmt(a.amount)}`)
@@ -434,7 +593,21 @@ function HistoryTable({
                     .map((d) => `${d.name}: ${fmtAmt(d.amount)}`)
                     .join(', ') || '—';
                 return (
-                  <tr key={cfg.id} className="border-b border-slate-100 hover:bg-slate-50 transition-colors">
+                  <tr
+                    key={cfg.id}
+                    className={`border-b border-slate-100 transition-colors ${
+                      isChecked ? 'bg-blue-50 hover:bg-blue-50' : 'hover:bg-slate-50'
+                    }`}
+                  >
+                    <td className="px-4 py-3">
+                      <input
+                        type="checkbox"
+                        aria-label={`Select ${cfg.employeeName}`}
+                        checked={isChecked}
+                        onChange={() => toggleRow(cfg.id)}
+                        className="h-4 w-4 rounded border-slate-300 text-blue-600 cursor-pointer"
+                      />
+                    </td>
                     <td className="px-4 py-3 text-sm font-mono text-slate-500">{cfg.employeeCode}</td>
                     <td className="px-4 py-3 text-sm font-medium text-slate-900 whitespace-nowrap">
                       {cfg.employeeName}
@@ -534,13 +707,19 @@ export function SalaryConfigSection() {
 
   // ─── Load history on month change ─────────────────────────────────────────
   useEffect(() => {
-    sc.loadHistory(selectedMonth);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    sc.loadHistory(selectedMonth);    sc.clearEditor();
+    setSelectedEmployeeId(null);    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedMonth]);
 
   // ─── Select employee ───────────────────────────────────────────────────────
   const handleEmployeeClick = useCallback(
     (emp: Employee) => {
+      // Toggle: clicking the same employee again deselects and closes the editor
+      if (emp.id === selectedEmployeeId) {
+        setSelectedEmployeeId(null);
+        sc.clearEditor();
+        return;
+      }
       setSelectedEmployeeId(emp.id);
       sc.selectEmployee(
         emp.id,
@@ -551,7 +730,7 @@ export function SalaryConfigSection() {
         selectedMonth,
       );
     },
-    [sc, selectedMonth],
+    [sc, selectedMonth, selectedEmployeeId],
   );
 
   // ─── Derived calculations (real-time) ────────────────────────────────────
@@ -719,21 +898,31 @@ export function SalaryConfigSection() {
             <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
 
               {/* Header */}
-              <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between gap-4 flex-wrap">
+              <div className="px-5 py-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between gap-4 flex-wrap">
                 <div>
                   <h3 className="text-base font-bold text-slate-900">
                     Salary Config for {sc.editor.employeeName} — {monthLabel(selectedMonth)}
                   </h3>
                   <p className="text-xs text-slate-500 mt-0.5">{sc.editor.employeeCode}</p>
                 </div>
-                <button
-                  onClick={() => sc.save(selectedMonth)}
-                  disabled={sc.saving}
-                  className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 text-white rounded-lg text-sm font-semibold hover:bg-indigo-500 disabled:opacity-50 transition-colors shrink-0"
-                >
-                  <Save className="h-4 w-4" />
-                  {sc.saving ? 'Saving…' : 'Save Config'}
-                </button>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    onClick={() => sc.importIncreaseAmount()}
+                    disabled={sc.importingIncrease}
+                    className="flex items-center gap-2 px-4 py-2.5 bg-emerald-600 text-white rounded-lg text-sm font-semibold hover:bg-emerald-500 disabled:opacity-50 transition-colors"
+                  >
+                    <TrendingUp className="h-4 w-4" />
+                    {sc.importingIncrease ? 'Syncing…' : 'Salary Increase Update'}
+                  </button>
+                  <button
+                    onClick={() => sc.save(selectedMonth)}
+                    disabled={sc.saving}
+                    className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 text-white rounded-lg text-sm font-semibold hover:bg-indigo-500 disabled:opacity-50 transition-colors"
+                  >
+                    <Save className="h-4 w-4" />
+                    {sc.saving ? 'Saving…' : 'Save Config'}
+                  </button>
+                </div>
               </div>
 
               {/* Salary summary row */}

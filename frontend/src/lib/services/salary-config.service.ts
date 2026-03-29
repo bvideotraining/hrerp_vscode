@@ -4,7 +4,12 @@ import type {
   CreateSalaryConfigPayload,
   UpdateSalaryConfigPayload,
 } from '@/types/salary-config';
-import type { SalaryIncrease, CreateSalaryIncreasePayload, UpdateSalaryIncreasePayload } from '@/types/salary-increases';
+import type {
+  SalaryIncrease,
+  CreateSalaryIncreasePayload,
+  UpdateSalaryIncreasePayload,
+  BulkSaveIncreasePayload,
+} from '@/types/salary-increases';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3003';
 
@@ -77,10 +82,17 @@ export const salaryConfigService = {
 };
 
 export const salaryIncreasesService = {
-  getAll(employeeId?: string, search?: string): Promise<SalaryIncrease[]> {
+  getAll(
+    employeeId?: string,
+    search?: string,
+    year?: string,
+    branch?: string,
+  ): Promise<SalaryIncrease[]> {
     const p = new URLSearchParams();
     if (employeeId) p.set('employeeId', employeeId);
     if (search) p.set('search', search);
+    if (year) p.set('year', year);
+    if (branch) p.set('branch', branch);
     const qs = p.toString();
     return apiFetch<SalaryIncrease[]>(`/api/salary-increases${qs ? `?${qs}` : ''}`);
   },
@@ -106,6 +118,18 @@ export const salaryIncreasesService = {
   remove(id: string): Promise<{ id: string }> {
     return apiFetch<{ id: string }>(`/api/salary-increases/${encodeURIComponent(id)}`, {
       method: 'DELETE',
+    });
+  },
+
+  bulkSave(payload: BulkSaveIncreasePayload): Promise<{
+    created: SalaryIncrease[];
+    updated: SalaryIncrease[];
+    deleted: string[];
+    errors: any[];
+  }> {
+    return apiFetch('/api/salary-increases/bulk-save', {
+      method: 'POST',
+      body: JSON.stringify(payload),
     });
   },
 };

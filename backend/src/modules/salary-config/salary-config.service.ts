@@ -4,6 +4,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { FirebaseService } from '@config/firebase/firebase.service';
+import { CashAdvancesService } from '@modules/cash-advances/cash-advances.service';
 import {
   CreateSalaryConfigDto,
   UpdateSalaryConfigDto,
@@ -71,7 +72,10 @@ function buildAuditEntry(
 
 @Injectable()
 export class SalaryConfigService {
-  constructor(private firebaseService: FirebaseService) {}
+  constructor(
+    private firebaseService: FirebaseService,
+    private cashAdvancesService: CashAdvancesService,
+  ) {}
 
   private get db() {
     return this.firebaseService.getFirestore();
@@ -155,9 +159,8 @@ export class SalaryConfigService {
 
     const allowances = plainLineItems(dto.allowances);
     const deductions = plainLineItems(dto.deductions);
-    // Salary increases are computed server-side at generate-payroll time and stored
-    // as the increaseAmount field here when explicitly provided; default to 0.
-    const increaseAmount = 0;
+    // Use explicitly provided increaseAmount, otherwise default to 0.
+    const increaseAmount = dto.increaseAmount ?? 0;
     const derived = computeDerived(dto.basicSalary, increaseAmount, allowances as any, deductions as any);
     const now = new Date().toISOString();
 
@@ -202,7 +205,8 @@ export class SalaryConfigService {
       dto.deductions !== undefined ? plainLineItems(dto.deductions) : (current.deductions || []);
     const basicSalary =
       dto.basicSalary !== undefined ? dto.basicSalary : current.basicSalary ?? 0;
-    const increaseAmount = current.increaseAmount ?? 0;
+    const increaseAmount =
+      dto.increaseAmount !== undefined ? dto.increaseAmount : current.increaseAmount ?? 0;
     const derived = computeDerived(basicSalary, increaseAmount, allowances, deductions);
 
     const updateData: any = {
@@ -212,6 +216,7 @@ export class SalaryConfigService {
       ...(dto.branch !== undefined && { branch: dto.branch }),
       ...(dto.notes !== undefined && { notes: dto.notes }),
       basicSalary,
+      increaseAmount,
       allowances,
       deductions,
       ...derived,
@@ -327,13 +332,14 @@ export class SalaryConfigService {
 
   /**
    * Collect all importable deductions for an employee for a specific month.
-   * Sources: social insurance, medical insurance.
+   * Sources: social insurance, medical insurance, cash advance installment.
    * Attendance/leave deductions are read-only at payroll generation time (not stored here).
    */
-  async importDeductions(employeeId: string, _month: string): Promise<SalaryLineItemDto[]> {
-    const [socialDoc, medicalDoc] = await Promise.all([
+  async importDeductions(employeeId: string, month: string): Promise<SalaryLineItemDto[]> {
+    const [socialDoc, medicalDoc, cashAdvanceAmount] = await Promise.all([
       this.db.collection('social_insurance').doc(employeeId).get(),
       this.db.collection('medical_insurance').doc(employeeId).get(),
+      this.cashAdvancesService.getDueInstallment(employeeId, month),
     ]);
 
     const items: SalaryLineItemDto[] = [];
@@ -352,6 +358,10 @@ export class SalaryConfigService {
       if (amount > 0) {
         items.push({ name: 'Medical Insurance', amount, source: 'medical_insurance' });
       }
+    }
+
+    if (cashAdvanceAmount > 0) {
+      items.push({ name: 'Cash in Advance', amount: cashAdvanceAmount, source: 'cash_advance' });
     }
 
     return items;

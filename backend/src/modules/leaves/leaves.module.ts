@@ -5,9 +5,10 @@ import { LeaveBalanceController } from './leave-balance.controller';
 import { LeaveBalanceService } from './leave-balance.service';
 import { FirebaseModule } from '../../config/firebase/firebase.module';
 import { AuthModule } from '../auth/auth.module';
+import { AttendanceModule } from '../attendance/attendance.module';
 
 @Module({
-  imports: [FirebaseModule, AuthModule],
+  imports: [FirebaseModule, AuthModule, AttendanceModule],
   controllers: [LeavesController, LeaveBalanceController],
   providers: [LeavesService, LeaveBalanceService],
   exports: [LeavesService, LeaveBalanceService],

@@ -67,7 +67,7 @@ export function EmployeeForm({ initialData, onSubmit, onCancel, isLoading }: Emp
       organizationService.getJobTitles(),
       settingsService.getConfig(),
     ]).then(([b, d, j, cfg]) => {
-      setBranches(b.filter((x) => x.isActive !== false).map((x) => x.name));
+      setBranches(b.map((x) => x.name));
       setDepartments(d.map((x) => x.name));
       setJobTitles(j.map((x) => x.name));
       // Pre-populate currency with system default if not already set
@@ -210,7 +210,7 @@ export function EmployeeForm({ initialData, onSubmit, onCancel, isLoading }: Emp
         currentSalary: Number(formData.currentSalary) || 0
       });
       setFieldErrors({});
-      onSubmit(validatedData);
+      onSubmit(validatedData as any);
     } catch (error: any) {
       setIsUploading(false);
       console.error('Form validation failed:', error);

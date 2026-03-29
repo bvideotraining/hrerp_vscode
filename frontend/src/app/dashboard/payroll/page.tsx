@@ -6,10 +6,13 @@ import DashboardLayout from '@/components/dashboard/layout';
 import { useAuth } from '@/context/auth-context';
 import { usePayroll } from '@/hooks/use-payroll';
 import { payrollService } from '@/lib/services/payroll.service';
+import { organizationService, type MonthRange } from '@/lib/services/organization.service';
 import { employeeService } from '@/lib/services/employee.service';
-import type { PayrollRecord, GeneratePayrollPayload } from '@/types/payroll';
+import type { PayrollRecord, GeneratePayrollPayload, BatchGenerateResult } from '@/types/payroll';
 import type { Employee } from '@/types/employee';
 import { SalaryConfigSection } from '@/components/payroll/salary-config-section';
+import { SalaryIncreasesSection } from '@/components/payroll/salary-increases-section';
+import { CashAdvancesSection } from '@/components/payroll/cash-advances-section';
 import {
   Banknote,
   Plus,
@@ -28,6 +31,9 @@ import {
   FileText,
   RefreshCw,
   Settings,
+  CreditCard,
+  Users,
+  Loader2,
 } from 'lucide-react';
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
@@ -98,8 +104,8 @@ async function exportDetailExcel(record: PayrollRecord) {
     ['── DEDUCTIONS ──', ''],
     ['Medical Insurance (EGP)', record.medicalInsurance],
     ['Social Insurance (EGP)', record.socialInsurance],
-    [`Late Deduction (${record.attendanceSummary?.lateMinutes ?? 0} min / ${record.attendanceSummary?.deductionDays ?? 0} days) (EGP)`, record.lateDeduction],
-    [`Absence Deduction (${record.leaveSummary?.unpaidDays ?? 0} unpaid days) (EGP)`, record.absenceDeduction],
+    [`Late Deduction (${record.attendanceSummary?.lateMinutes ?? 0} min → ${record.attendanceSummary?.deductionDays ?? 0} days) (EGP)`, record.lateDeduction],
+    [`Absence Deduction (${record.leaveSummary?.unpaidDays ?? 0} unpaid leave + ${record.attendanceSummary?.absenceDays ?? 0} absent days) (EGP)`, record.absenceDeduction],
     ['Cash Advance (EGP)', record.cashAdvance],
     ['Total Deductions (EGP)', record.totalDeductions],
     ['', ''],
@@ -178,11 +184,11 @@ async function exportDetailPDF(record: PayrollRecord) {
       ['Medical Insurance', fmtAmt(record.medicalInsurance)],
       ['Social Insurance', fmtAmt(record.socialInsurance)],
       [
-        `Late Deduction  (${record.attendanceSummary?.lateMinutes ?? 0} min / ${record.attendanceSummary?.deductionDays ?? 0} late days)`,
+        `Late Deduction  (${record.attendanceSummary?.lateMinutes ?? 0} min → ${record.attendanceSummary?.deductionDays ?? 0} days)`,
         fmtAmt(record.lateDeduction),
       ],
       [
-        `Absence Deduction  (${record.leaveSummary?.unpaidDays ?? 0} unpaid days)`,
+        `Absence Deduction  (${record.leaveSummary?.unpaidDays ?? 0} unpaid leave + ${record.attendanceSummary?.absenceDays ?? 0} absent days)`,
         fmtAmt(record.absenceDeduction),
       ],
       ['Cash Advance', fmtAmt(record.cashAdvance)],
@@ -503,20 +509,17 @@ function DetailsModal({ record, isAdmin, onClose, onPublishRequest, onDeleteRequ
               <DeductRow label="Medical Insurance" amount={record.medicalInsurance} />
               <DeductRow label="Social Insurance" amount={record.socialInsurance} />
               <DeductRow
-                label={`Late Deduction  (${record.attendanceSummary?.lateMinutes ?? 0} min / ${record.attendanceSummary?.deductionDays ?? 0} days)`}
+                label={`Late Deduction  (${record.attendanceSummary?.lateMinutes ?? 0} min → ${record.attendanceSummary?.deductionDays ?? 0} days)`}
                 amount={record.lateDeduction}
               />
               <DeductRow
-                label={`Absence Deduction  (${record.leaveSummary?.unpaidDays ?? 0} unpaid days)`}
+                label={`Absence Deduction  (${record.leaveSummary?.unpaidDays ?? 0} unpaid leave + ${record.attendanceSummary?.absenceDays ?? 0} absent days)`}
                 amount={record.absenceDeduction}
               />
-              <div className="flex justify-between items-center py-2 text-sm text-slate-500 border-b border-slate-50">
-                <span>
-                  Cash Advance
-                  <span className="ml-2 text-xs text-amber-500 bg-amber-50 px-1.5 py-0.5 rounded">integration pending</span>
-                </span>
-                <span className="text-slate-400">—</span>
-              </div>
+              <DeductRow
+                label="Cash Advance"
+                amount={record.cashAdvance}
+              />
               <DeductRow label="Total Deductions" amount={record.totalDeductions} highlight />
             </div>
           </div>
@@ -604,7 +607,217 @@ function DetailsModal({ record, isAdmin, onClose, onPublishRequest, onDeleteRequ
   );
 }
 
-// ─── Generate Payroll Modal ────────────────────────────────────────────────
+// ─── Batch Generate Modal ─────────────────────────────────────────────────
+
+interface BatchGenerateModalProps {
+  onClose: () => void;
+  onGenerated: (result: BatchGenerateResult, payrollMonth: string) => void;
+}
+
+function BatchGenerateModal({ onClose, onGenerated }: BatchGenerateModalProps) {
+  const [monthRanges, setMonthRanges] = useState<MonthRange[]>([]);
+  const [selectedRangeId, setSelectedRangeId] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    organizationService.getMonthRanges()
+      .then((ranges) => {
+        setMonthRanges(ranges);
+        if (ranges.length > 0 && ranges[0].id) setSelectedRangeId(ranges[0].id);
+      })
+      .catch(() => setError('Failed to load month ranges'))
+      .finally(() => setLoading(false));
+  }, []);
+
+  async function handleGenerate() {
+    if (!selectedRangeId) { setError('Please select a month range.'); return; }
+    setError('');
+    setSaving(true);
+    try {
+      const result = await payrollService.generateBatch(selectedRangeId);
+      const range = monthRanges.find((r) => r.id === selectedRangeId);
+      const payrollMonth = range ? range.endDate.substring(0, 7) : '';
+      onGenerated(result, payrollMonth);
+    } catch (e: any) {
+      setError(e.message || 'Failed to generate batch payroll');
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-md flex flex-col overflow-hidden">
+
+        {/* Header */}
+        <div className="bg-slate-900 px-6 py-4 flex items-center justify-between shrink-0">
+          <div>
+            <h3 className="text-sm font-bold text-white uppercase tracking-widest">Generate Payroll</h3>
+            <p className="text-xs text-slate-400 mt-0.5">Batch-calculate salaries for all employees in a period</p>
+          </div>
+          <button onClick={onClose} disabled={saving} className="p-1.5 text-slate-400 hover:text-white rounded transition-colors disabled:opacity-50">
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="px-6 py-5 space-y-4">
+          {error && (
+            <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</p>
+          )}
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">
+              Month Period *
+            </label>
+            {loading ? (
+              <div className="flex items-center gap-2 text-sm text-slate-400 py-2">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Loading month ranges…
+              </div>
+            ) : monthRanges.length === 0 ? (
+              <p className="text-sm text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                No month ranges configured. Please set them up in the Organization module first.
+              </p>
+            ) : (
+              <select
+                value={selectedRangeId}
+                onChange={(e) => setSelectedRangeId(e.target.value)}
+                className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
+              >
+                <option value="">Select month range…</option>
+                {monthRanges.map((r) => (
+                  <option key={r.id} value={r.id ?? ''}>
+                    {r.monthName} ({r.startDate} → {r.endDate})
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
+
+          <div className="bg-blue-50 border border-blue-100 rounded-lg px-4 py-3 text-xs text-blue-700 space-y-1">
+            <p className="font-semibold">Batch scope</p>
+            <ul className="list-disc list-inside space-y-0.5">
+              <li>Only employees <strong>with a salary config</strong> for the selected period will be processed.</li>
+              <li>Already-<strong>published</strong> records will be skipped.</li>
+              <li>Failures are reported individually — the batch continues for all other employees.</li>
+            </ul>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex justify-between items-center shrink-0">
+          <button onClick={onClose} disabled={saving} className="px-5 py-2 text-sm text-slate-500 hover:text-slate-800 disabled:opacity-50">
+            Cancel
+          </button>
+          <button
+            onClick={handleGenerate}
+            disabled={saving || loading || !selectedRangeId}
+            className="flex items-center gap-2 px-6 py-2.5 bg-slate-900 text-white rounded-lg hover:bg-slate-800 text-sm font-semibold disabled:opacity-50 transition-colors"
+          >
+            {saving ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Generating…
+              </>
+            ) : (
+              <>
+                <Users className="h-4 w-4" />
+                Generate for All Employees
+              </>
+            )}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Batch Result Modal ────────────────────────────────────────────────────
+
+interface BatchResultModalProps {
+  result: BatchGenerateResult;
+  onClose: () => void;
+}
+
+function BatchResultModal({ result, onClose }: BatchResultModalProps) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg flex flex-col overflow-hidden">
+
+        {/* Header */}
+        <div className="bg-slate-900 px-6 py-4 flex items-center justify-between shrink-0">
+          <div>
+            <h3 className="text-sm font-bold text-white uppercase tracking-widest">Batch Generation Result</h3>
+            <p className="text-xs text-slate-400 mt-0.5">
+              {result.period.monthName} &mdash; {result.period.startDate} → {result.period.endDate}
+            </p>
+          </div>
+          <button onClick={onClose} className="p-1.5 text-slate-400 hover:text-white rounded transition-colors">
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="overflow-y-auto flex-1 px-6 py-5 space-y-4 max-h-[60vh]">
+
+          {/* Summary cards */}
+          <div className="grid grid-cols-3 gap-3">
+            <div className="bg-green-50 border border-green-100 rounded-lg p-3 text-center">
+              <p className="text-2xl font-bold text-green-700">{result.succeeded.length}</p>
+              <p className="text-xs text-green-600 font-semibold mt-0.5">Succeeded</p>
+            </div>
+            <div className="bg-amber-50 border border-amber-100 rounded-lg p-3 text-center">
+              <p className="text-2xl font-bold text-amber-700">{result.skipped.length}</p>
+              <p className="text-xs text-amber-600 font-semibold mt-0.5">Skipped (Published)</p>
+            </div>
+            <div className="bg-red-50 border border-red-100 rounded-lg p-3 text-center">
+              <p className="text-2xl font-bold text-red-700">{result.failed.length}</p>
+              <p className="text-xs text-red-600 font-semibold mt-0.5">Failed</p>
+            </div>
+          </div>
+
+          {result.failed.length > 0 && (
+            <div>
+              <h4 className="text-xs font-semibold text-red-600 uppercase tracking-wide mb-2">Failed Employees</h4>
+              <div className="border border-red-100 rounded-lg overflow-hidden">
+                {result.failed.map((f, i) => (
+                  <div
+                    key={f.employeeId}
+                    className={`px-4 py-2.5 text-sm ${i < result.failed.length - 1 ? 'border-b border-red-50' : ''}`}
+                  >
+                    <span className="font-medium text-slate-800">{f.employeeName}</span>
+                    <span className="text-slate-400 ml-2 text-xs">({f.employeeId})</span>
+                    <p className="text-xs text-red-600 mt-0.5">{f.error}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {result.skipped.length > 0 && (
+            <p className="text-xs text-slate-500">
+              {result.skipped.length} employee{result.skipped.length !== 1 ? 's' : ''} skipped because their payroll is already published for this period.
+            </p>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex justify-end shrink-0">
+          <button
+            onClick={onClose}
+            className="px-6 py-2.5 bg-slate-900 text-white rounded-lg hover:bg-slate-800 text-sm font-semibold transition-colors"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Generate Payroll Modal (single employee — kept for reference) ─────────
 
 interface GenerateModalProps {
   employees: Employee[];
@@ -746,11 +959,13 @@ function GenerateModal({ employees, onClose, onGenerated }: GenerateModalProps) 
 // ─── Main content ──────────────────────────────────────────────────────────
 
 // ─── Tab definitions ──────────────────────────────────────────────────────
-type PayrollTab = 'summary' | 'salary-config';
+type PayrollTab = 'summary' | 'salary-config' | 'salary-increases' | 'cash-advances';
 
-const PAYROLL_TABS: { id: PayrollTab; label: string; icon?: React.ReactNode }[] = [
+const PAYROLL_TABS: { id: PayrollTab; label: string }[] = [
   { id: 'summary', label: 'Payroll Summary' },
   { id: 'salary-config', label: 'Salary Config' },
+  { id: 'salary-increases', label: 'Salary Increases' },
+  { id: 'cash-advances', label: 'Cash in Advance' },
 ];
 
 function PayrollContent() {
@@ -777,6 +992,7 @@ function PayrollContent() {
 
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [showGenerate, setShowGenerate] = useState(false);
+  const [batchResult, setBatchResult] = useState<BatchGenerateResult | null>(null);
   const [detailRecord, setDetailRecord] = useState<PayrollRecord | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<PayrollRecord | null>(null);
   const [publishTarget, setPublishTarget] = useState<PayrollRecord | null>(null);
@@ -884,6 +1100,8 @@ function PayrollContent() {
               }`}
             >
               {tab.id === 'salary-config' && <Settings className="h-3.5 w-3.5" />}
+              {tab.id === 'salary-increases' && <TrendingUp className="h-3.5 w-3.5" />}
+              {tab.id === 'cash-advances' && <CreditCard className="h-3.5 w-3.5" />}
               {tab.label}
             </button>
           ))}
@@ -892,6 +1110,12 @@ function PayrollContent() {
 
       {/* ── Salary Config tab ── */}
       {activeTab === 'salary-config' && <SalaryConfigSection />}
+
+      {/* ── Salary Increases tab ── */}
+      {activeTab === 'salary-increases' && <SalaryIncreasesSection />}
+
+      {/* ── Cash in Advance tab ── */}
+      {activeTab === 'cash-advances' && <CashAdvancesSection />}
 
       {/* ── Payroll Summary tab ── */}
       {activeTab === 'summary' && (
@@ -1129,10 +1353,24 @@ function PayrollContent() {
 
       {/* ── Modals ── */}
       {showGenerate && admin && (
-        <GenerateModal
-          employees={employees}
+        <BatchGenerateModal
           onClose={() => setShowGenerate(false)}
-          onGenerated={() => { setShowGenerate(false); reload(); }}
+          onGenerated={(result, payrollMonth) => {
+            setShowGenerate(false);
+            setBatchResult(result);
+            // Switch filter to the generated payroll month so results are visible
+            if (payrollMonth) {
+              setFilters({ payrollMonth });
+              setLocalMonth(payrollMonth);
+            }
+          }}
+        />
+      )}
+
+      {batchResult && (
+        <BatchResultModal
+          result={batchResult}
+          onClose={() => setBatchResult(null)}
         />
       )}
 

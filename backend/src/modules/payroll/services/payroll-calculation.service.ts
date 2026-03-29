@@ -18,8 +18,8 @@ export interface PayrollBreakdown {
   medicalInsurance: number;
   socialInsurance: number;
   lateDeduction: number;         // attendanceDeductionDays * dailyRate
-  absenceDeduction: number;      // unpaidLeaveDays * dailyRate
-  cashAdvance: number;           // placeholder 0 for this phase
+  absenceDeduction: number;      // (unpaidLeaveDays + attendanceAbsenceDays) * dailyRate
+  cashAdvance: number;
   totalDeductions: number;
 
   // Final
@@ -30,6 +30,7 @@ export interface PayrollBreakdown {
   lateMinutes: number;
   attendanceDeductionDays: number;
   unpaidLeaveDays: number;
+  attendanceAbsenceDays: number;
 }
 
 @Injectable()
@@ -59,7 +60,7 @@ export class PayrollCalculationService {
     const dailyRate = basicSalary > 0 ? r(basicSalary / 30) : 0;
 
     const lateDeduction = r(source.attendanceDeductionDays * dailyRate);
-    const absenceDeduction = r(source.unpaidLeaveDays * dailyRate);
+    const absenceDeduction = r((source.unpaidLeaveDays + source.attendanceAbsenceDays) * dailyRate);
     const medicalInsurance = r(source.medicalInsurance);
     const socialInsurance = r(source.socialInsurance);
     const cashAdvance = r(source.cashAdvance);
@@ -93,6 +94,7 @@ export class PayrollCalculationService {
       lateMinutes: source.lateMinutes,
       attendanceDeductionDays: source.attendanceDeductionDays,
       unpaidLeaveDays: source.unpaidLeaveDays,
+      attendanceAbsenceDays: source.attendanceAbsenceDays,
     };
   }
 }

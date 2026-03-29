@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { settingsService, SystemConfig, OfficialVacation } from '@/lib/services/settings.service';
+import { useSettings } from '@/context/settings-context';
 import { Plus, Trash2, Save, CalendarDays } from 'lucide-react';
 
 const CURRENCIES = [
@@ -26,6 +27,7 @@ const DEFAULT_CONFIG: SystemConfig = {
 };
 
 export default function SystemConfigSection() {
+  const { refreshSettings } = useSettings();
   const [config, setConfig] = useState<SystemConfig>(DEFAULT_CONFIG);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -69,6 +71,7 @@ export default function SystemConfigSection() {
     setSaving(true);
     try {
       await settingsService.updateConfig(config);
+      await refreshSettings();
       setSaved(true);
       setTimeout(() => setSaved(false), 2500);
     } catch (err: any) {

@@ -94,3 +94,19 @@ export class PayrollFilterDto {
   @IsOptional()
   limit?: number;
 }
+
+// ─── Batch generation ───────────────────────────────────────────────────────
+
+export class BatchGeneratePayrollDto {
+  @ApiProperty({ description: 'Firestore document ID of the month_range to generate payroll for' })
+  @IsString()
+  monthRangeId: string;
+}
+
+export interface BatchGenerateResultDto {
+  payrollMonth: string;
+  period: { startDate: string; endDate: string; monthName: string };
+  succeeded: string[];
+  failed: { employeeId: string; employeeName: string; error: string }[];
+  skipped: string[];
+}

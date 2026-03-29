@@ -4,6 +4,7 @@ import { CreateUserDto, UpdateUserDto } from './dto/user.dto';
 import { CreateRoleDto } from './dto/role.dto';
 import { SystemConfigDto } from './dto/config.dto';
 import { NotificationConfigDto, ResetSystemDto } from './dto/notification-config.dto';
+import { SaveDashboardLayoutDto } from './dto/dashboard-layout.dto';
 
 const ALL_COLLECTIONS = [
   'systemUsers', 'roles', 'systemConfig', 'employees',
@@ -104,7 +105,7 @@ export class SettingsService {
 
   private defaultConfig() {
     return {
-      defaultCurrency: 'USD',
+      defaultCurrency: 'EGP',
       workingDaysPerWeek: 5,
       weeklyHolidays: ['friday', 'saturday'],
       officialVacations: [],
@@ -271,5 +272,85 @@ export class SettingsService {
       }
     }
     return { deleted: deletedCount, reset: true };
+  }
+
+  // ═══ DASHBOARD LAYOUTS ══════════════════════════════════════
+
+  async getDashboardLayout(roleId: string) {
+    const db = this.firebaseService.getFirestore();
+    const doc = await db.collection('dashboard_layouts').doc(roleId).get();
+    if (!doc.exists) return null;
+    return { roleId, ...doc.data() };
+  }
+
+  async saveDashboardLayout(roleId: string, dto: SaveDashboardLayoutDto) {
+    const db = this.firebaseService.getFirestore();
+    const plain = JSON.parse(JSON.stringify(dto));
+    const data = { ...plain, roleId, updatedAt: new Date().toISOString() };
+    await db.collection('dashboard_layouts').doc(roleId).set(data);
+    return { roleId, ...data };
+  }
+
+  async aiSuggestWidgets(roleId: string, role: any) {
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) throw new Error('GEMINI_API_KEY is not configured in .env');
+    const { GoogleGenerativeAI } = await import('@google/generative-ai');
+    const genAI = new GoogleGenerativeAI(apiKey);
+    const configuredModel = process.env.GEMINI_MODEL?.trim();
+    const modelCandidates = [
+      configuredModel,
+      'gemini-2.5-flash',
+      'gemini-2.0-flash',
+      'gemini-flash-latest',
+    ].filter((m): m is string => Boolean(m));
+    const moduleAccess =
+      role?.accessType === 'full'
+        ? 'all HR modules (full admin access)'
+        : (role?.permissions || [])
+            .filter((p: any) => Array.isArray(p.actions) && p.actions.includes('read'))
+            .map((p: any) => p.moduleName)
+            .join(', ') || 'no specific modules';
+    const widgetList = [
+      { id: 'kpi_total_employees', category: 'kpi', description: 'Total active employees' },
+      { id: 'kpi_payroll_estimate', category: 'kpi', description: 'Monthly payroll cost estimate' },
+      { id: 'kpi_pending_leaves', category: 'kpi', description: 'Leave requests awaiting approval' },
+      { id: 'kpi_on_leave_today', category: 'kpi', description: 'Employees on leave today' },
+      { id: 'kpi_late_incidents', category: 'kpi', description: 'Late attendance incidents this month' },
+      { id: 'kpi_bonuses_total', category: 'kpi', description: 'Total bonuses disbursed' },
+      { id: 'kpi_social_insurance', category: 'kpi', description: 'Employees under social insurance' },
+      { id: 'chart_attendance_trend', category: 'chart', description: 'Daily attendance rate trend' },
+      { id: 'chart_salary_distribution', category: 'chart', description: 'Salary ranges by department' },
+      { id: 'chart_leave_types', category: 'chart', description: 'Leave requests by type breakdown' },
+      { id: 'chart_headcount_by_dept', category: 'chart', description: 'Employee count per department' },
+      { id: 'list_late_employees', category: 'list', description: 'Recent late or absent employees' },
+      { id: 'list_recent_activities', category: 'list', description: 'Latest system events' },
+      { id: 'list_pending_leaves', category: 'list', description: 'Pending leave approvals list' },
+      { id: 'quick_actions', category: 'utility', description: 'Shortcuts to common tasks' },
+      { id: 'system_status', category: 'utility', description: 'System health and stats' },
+    ];
+    const prompt = `You are an HR ERP dashboard configuration expert. A user role named "${role?.name || roleId}" has access to: ${moduleAccess}.\n\nSelect the most relevant dashboard widgets for this role from the list below and explain why each is useful.\n\nAvailable widgets:\n${JSON.stringify(widgetList, null, 2)}\n\nRespond with a JSON array ONLY (no markdown, no code fences). Each item:\n{"widgetId": "string", "reason": "brief reason (max 15 words)", "priority": "high" | "medium" | "low"}`;
+    let rawText = '';
+    let lastError: any = null;
+
+    for (const modelName of modelCandidates) {
+      try {
+        const model = genAI.getGenerativeModel({ model: modelName });
+        const result = await model.generateContent(prompt);
+        rawText = result.response.text().trim();
+        if (rawText) break;
+      } catch (err: any) {
+        lastError = err;
+      }
+    }
+
+    if (!rawText) {
+      const detail = lastError?.message || 'No model candidate returned a response';
+      throw new Error(`Gemini request failed. Set GEMINI_MODEL in backend/.env to a supported model. Details: ${detail}`);
+    }
+
+    const text = rawText;
+    // Strip any accidental markdown fences
+    const clean = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
+    return JSON.parse(clean) as Array<{ widgetId: string; reason: string; priority: 'high' | 'medium' | 'low' }>;
   }
 }

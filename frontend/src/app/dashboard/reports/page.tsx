@@ -13,13 +13,11 @@ import {
   FileText,
   Filter,
   Columns,
-  Download,
   ArrowLeft,
   Search,
   CheckSquare,
   Square,
   RotateCcw,
-  Eye,
 } from 'lucide-react';
 
 /* â”€â”€â”€ Available report fields â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
@@ -83,7 +81,7 @@ export default function ReportsPage() {
 /* â”€â”€â”€ Main content â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 function ReportsContent() {
   const router = useRouter();
-  const { user } = useAuth();
+  useAuth();
   const { getAllEmployees } = useEmployee();
 
   const [employees, setEmployees] = useState<Employee[]>([]);
@@ -130,7 +128,7 @@ function ReportsContent() {
         organizationService.getDepartments().catch(() => []),
       ]);
       setEmployees(emps);
-      setOrgBranches(branches.filter((x) => x.isActive !== false).map((x) => x.name));
+      setOrgBranches(branches.map((x) => x.name));
       setOrgDepts(departments.map((x) => x.name));
     } catch {
       console.error('Failed to load report data');

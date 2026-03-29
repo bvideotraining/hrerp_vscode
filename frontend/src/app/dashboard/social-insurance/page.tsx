@@ -1,7 +1,6 @@
 ﻿'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import * as XLSX from 'xlsx';
 import { ProtectedRoute } from '@/components/auth/protected-route';
 import DashboardLayout from '@/components/dashboard/layout';
 import { useAuth } from '@/context/auth-context';
@@ -27,7 +26,7 @@ function fmtCurrency(n: number) {
   return n.toLocaleString('en-EG', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-function exportExcel(records: SocialInsuranceRecord[]) {
+async function exportExcel(records: SocialInsuranceRecord[]) {
   const data = records.map((r) => ({
     'Employee Name':            r.employeeName,
     'Employee Code':            r.employeeCode,
@@ -39,6 +38,7 @@ function exportExcel(records: SocialInsuranceRecord[]) {
     'Form 1': r.attachments?.find((a) => a.formType === 'form1')?.url || '',
     'Form 6': r.attachments?.find((a) => a.formType === 'form6')?.url || '',
   }));
+  const XLSX = await import('xlsx');
   const ws = XLSX.utils.json_to_sheet(data);
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Social Insurance');

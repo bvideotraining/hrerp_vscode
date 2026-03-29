@@ -191,7 +191,18 @@ export class OrganizationService {
       return DEFAULT_ATTENDANCE_RULES.map((r) => ({ id: r.category, ...r }));
     }
 
-    return snap.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+    // Firestore docs may be missing deductionSchedule if saved before the field existed.
+    // Always fall back to DEFAULT_DEDUCTION_SCHEDULE so payroll never gets an empty schedule.
+    return snap.docs.map((doc) => {
+      const data = doc.data() as any;
+      return {
+        id: doc.id,
+        ...data,
+        deductionSchedule: (data.deductionSchedule && data.deductionSchedule.length > 0)
+          ? data.deductionSchedule
+          : DEFAULT_DEDUCTION_SCHEDULE,
+      };
+    });
   }
 
   async updateAttendanceRule(category: string, dto: AttendanceRuleDto) {

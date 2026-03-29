@@ -41,7 +41,7 @@ export default function AddEmployeePage() {
           </div>
 
           <EmployeeForm
-            onSubmit={handleSubmit}
+            onSubmit={handleSubmit as any}
             onCancel={handleCancel}
             isLoading={loading}
           />

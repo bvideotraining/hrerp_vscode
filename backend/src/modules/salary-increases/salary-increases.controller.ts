@@ -18,6 +18,7 @@ import { SalaryIncreasesService } from './salary-increases.service';
 import {
   CreateSalaryIncreaseDto,
   UpdateSalaryIncreaseDto,
+  BulkSaveIncreaseDto,
 } from './dto/salary-increase.dto';
 
 function isAppAdmin(user: any): boolean {
@@ -38,13 +39,15 @@ export class SalaryIncreasesController {
     @Req() req: any,
     @Query('employeeId') employeeId?: string,
     @Query('search') search?: string,
+    @Query('year') year?: string,
+    @Query('branch') branch?: string,
   ) {
     if (isAppAdmin(req.user)) {
-      return this.service.findAll(employeeId, search);
+      return this.service.findAll(employeeId, search, year, branch);
     }
     const ownId = req.user?.employeeId;
     if (!ownId) return [];
-    return this.service.findAll(ownId);
+    return this.service.findAll(ownId, search, year, branch);
   }
 
   @Get(':id')
@@ -56,6 +59,14 @@ export class SalaryIncreasesController {
       throw new ForbiddenException('Access denied');
     }
     return record;
+  }
+
+  @Post('bulk-save')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Bulk create / update / delete salary increases (admin only)' })
+  bulkSave(@Body() dto: BulkSaveIncreaseDto, @Req() req: any) {
+    if (!isAppAdmin(req.user)) throw new ForbiddenException('Insufficient permissions');
+    return this.service.bulkSave(dto);
   }
 
   @Post()

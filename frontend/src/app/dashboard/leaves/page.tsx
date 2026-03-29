@@ -6,14 +6,14 @@ import DashboardLayout from '@/components/dashboard/layout';
 import { useAuth } from '@/context/auth-context';
 import {
   leavesService, leaveBalanceService,
-  LeaveRequest, LeaveBalance, LeaveType,
+  LeaveRequest, LeaveBalance, LeaveType, LeaveAttachment,
   CreateLeavePayload, LEAVE_TYPE_LABELS,
 } from '@/lib/services/leaves.service';
 import { employeeService } from '@/lib/services/employee.service';
 import { Employee } from '@/types/employee';
 import {
   Plus, X, Check, XCircle, Trash2, Calendar, Clock, User,
-  ShieldCheck, BarChart2, ChevronDown, ChevronUp, Save, Settings,
+  ShieldCheck, BarChart2, ChevronDown, ChevronUp, Save, Settings, Paperclip,
 } from 'lucide-react';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -61,13 +61,37 @@ function LeaveForm({ onClose, onSaved, ownEmployeeId, ownEmployeeName, ownEmploy
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [attachments, setAttachments] = useState<LeaveAttachment[]>([]);
+  const [uploading, setUploading] = useState(false);
   const totalDays = daysBetween(form.startDate, form.endDate);
+
+  async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
+    setUploading(true); setError('');
+    try {
+      const uploaded: LeaveAttachment[] = [];
+      for (const file of files) {
+        const result = await leavesService.uploadAttachment(file);
+        uploaded.push(result);
+      }
+      setAttachments((prev) => [...prev, ...uploaded]);
+    } catch (e: any) { setError(e.message || 'File upload failed');
+    } finally { setUploading(false); e.target.value = ''; }
+  }
+
+  function removeAttachment(index: number) {
+    setAttachments((prev) => prev.filter((_, i) => i !== index));
+  }
 
   async function handleSubmit() {
     if (!form.employeeId || !form.startDate || !form.endDate) {
       setError('Please fill in all required fields.'); return;
     }
     if (totalDays <= 0) { setError('End date must be on or after start date.'); return; }
+    if (form.leaveType === 'sick' && attachments.length === 0) {
+      setError('A medical report attachment is required for sick leave.'); return;
+    }
     setSaving(true); setError('');
     try {
       const payload: CreateLeavePayload = {
@@ -79,6 +103,7 @@ function LeaveForm({ onClose, onSaved, ownEmployeeId, ownEmployeeName, ownEmploy
         endDate:        form.endDate,
         totalDays,
         reason:         form.reason || undefined,
+        attachments:    attachments.length > 0 ? attachments : undefined,
       };
       await leavesService.create(payload);
       onSaved();
@@ -138,6 +163,38 @@ function LeaveForm({ onClose, onSaved, ownEmployeeId, ownEmployeeName, ownEmploy
               rows={3} className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
               placeholder="Briefly describe the reason for your leave..." />
           </div>
+          {/* Medical report upload — required for sick leave */}
+          {form.leaveType === 'sick' && (
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1">
+                Medical Report <span className="text-red-500">*</span>
+                <span className="ml-1 text-slate-400 font-normal">(required for sick leave)</span>
+              </label>
+              <label className="flex items-center gap-2 px-3 py-2 border border-dashed border-blue-300 rounded-lg cursor-pointer hover:bg-blue-50 transition-colors text-sm text-blue-600">
+                <Paperclip className="h-4 w-4 shrink-0" />
+                <span>{uploading ? 'Uploading...' : 'Click to attach file(s)'}</span>
+                <input
+                  type="file"
+                  multiple
+                  accept="image/*,application/pdf,.doc,.docx"
+                  className="hidden"
+                  disabled={uploading}
+                  onChange={handleFileChange}
+                />
+              </label>
+              {attachments.length > 0 && (
+                <ul className="mt-2 space-y-1">
+                  {attachments.map((a, i) => (
+                    <li key={i} className="flex items-center gap-2 text-xs text-slate-600 bg-slate-50 rounded px-2 py-1.5">
+                      <Paperclip className="h-3 w-3 text-slate-400 shrink-0" />
+                      <a href={a.url} target="_blank" rel="noopener noreferrer" className="flex-1 truncate text-blue-600 hover:underline">{a.name}</a>
+                      <button type="button" onClick={() => removeAttachment(i)} className="text-slate-400 hover:text-red-500"><X className="h-3 w-3" /></button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
         </div>
         <div className="flex gap-3 mt-6 pt-4 border-t border-slate-100">
           <button onClick={onClose} className="flex-1 px-4 py-2 border border-slate-200 text-slate-700 rounded-lg hover:bg-slate-50 text-sm">Cancel</button>
@@ -203,6 +260,7 @@ function LeaveTable({ records, showEmployee, canApprove, canDelete, onApprove, o
               <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Dates</th>
               <th className="text-center px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Days</th>
               <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Reason</th>
+              <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Reports</th>
               <th className="text-center px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Status</th>
               <th className="px-4 py-3" />
             </tr>
@@ -222,6 +280,26 @@ function LeaveTable({ records, showEmployee, canApprove, canDelete, onApprove, o
                 </td>
                 <td className="px-4 py-3 text-center font-medium text-slate-700">{r.totalDays}</td>
                 <td className="px-4 py-3 text-slate-500 text-xs max-w-[160px] truncate">{r.reason || '-'}</td>
+                <td className="px-4 py-3">
+                  {r.leaveType === 'sick' ? (
+                    r.attachments && r.attachments.length > 0 ? (
+                      <div className="flex flex-col gap-0.5">
+                        {r.attachments.map((a, i) => (
+                          <a key={i} href={a.url} target="_blank" rel="noopener noreferrer"
+                            className="flex items-center gap-1 text-xs text-blue-600 hover:underline truncate max-w-[140px]">
+                            <Paperclip className="h-3 w-3 shrink-0" />{a.name}
+                          </a>
+                        ))}
+                      </div>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 text-xs text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded">
+                        <Paperclip className="h-3 w-3" />Missing
+                      </span>
+                    )
+                  ) : (
+                    <span className="text-xs text-slate-300">—</span>
+                  )}
+                </td>
                 <td className="px-4 py-3 text-center">
                   <StatusBadge status={r.status} />
                   {r.status === 'rejected' && r.rejectedReason && <p className="text-xs text-red-500 mt-0.5">{r.rejectedReason}</p>}

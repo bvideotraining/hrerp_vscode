@@ -1,7 +1,6 @@
 ﻿'use client';
 
-import { useState, useCallback, useRef, useEffect } from 'react';
-import * as XLSX from 'xlsx';
+import { useState, useCallback, useEffect } from 'react';
 import { ProtectedRoute } from '@/components/auth/protected-route';
 import DashboardLayout from '@/components/dashboard/layout';
 import { AttendanceFiltersBar } from '@/components/attendance/attendance-filters';
@@ -131,6 +130,7 @@ function AttendancePageContent() {
       Excuse: r.excuse || '',
       Notes: r.notes || '',
     }));
+    const XLSX = await import('xlsx');
     const ws = XLSX.utils.json_to_sheet(rows);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Attendance');
@@ -162,6 +162,7 @@ function AttendancePageContent() {
     setIsImporting(true);
     try {
       const buffer = await file.arrayBuffer();
+      const XLSX = await import('xlsx');
       const wb = XLSX.read(buffer, { type: 'array' });
       const ws = wb.Sheets[wb.SheetNames[0]];
       const rows: any[] = XLSX.utils.sheet_to_json(ws);

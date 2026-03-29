@@ -10,6 +10,11 @@ import { SettingsModule } from './modules/settings/settings.module';
 import { LeavesModule } from './modules/leaves/leaves.module';
 import { BonusesModule } from './modules/bonuses/bonuses.module';
 import { SocialInsuranceModule } from './modules/social-insurance/social-insurance.module';
+import { MedicalInsuranceModule } from './modules/medical-insurance/medical-insurance.module';
+import { SalaryConfigModule } from './modules/salary-config/salary-config.module';
+import { SalaryIncreasesModule } from './modules/salary-increases/salary-increases.module';
+import { PayrollModule } from './modules/payroll/payroll.module';
+import { CashAdvancesModule } from './modules/cash-advances/cash-advances.module';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 
@@ -29,6 +34,11 @@ import { AppService } from './app.service';
     LeavesModule,
     BonusesModule,
     SocialInsuranceModule,
+    MedicalInsuranceModule,
+    SalaryConfigModule,
+    SalaryIncreasesModule,
+    PayrollModule,
+    CashAdvancesModule,
   ],
   controllers: [AppController],
   providers: [AppService],

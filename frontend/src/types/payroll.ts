@@ -5,6 +5,7 @@ export type PayrollStatus = 'draft' | 'published';
 export interface AttendanceSummary {
   lateMinutes: number;
   deductionDays: number;
+  absenceDays?: number;
 }
 
 export interface LeaveSummary {
@@ -88,6 +89,14 @@ export interface PayrollListResponse {
   total: number;
   page: number;
   limit: number;
+}
+
+export interface BatchGenerateResult {
+  payrollMonth: string;
+  period: { startDate: string; endDate: string; monthName: string };
+  succeeded: string[];
+  failed: { employeeId: string; employeeName: string; error: string }[];
+  skipped: string[];
 }
 
 // Used for Excel/PDF export rows

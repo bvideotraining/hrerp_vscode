@@ -66,6 +66,12 @@ export class CreateSalaryConfigDto {
   @Min(0)
   basicSalary: number;
 
+  @ApiPropertyOptional({ description: 'Cumulative salary increase amount in EGP' })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  increaseAmount?: number;
+
   @ApiPropertyOptional({ type: [SalaryLineItemDto] })
   @IsOptional()
   @IsArray()
