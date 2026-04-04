@@ -40,7 +40,6 @@ export interface CreateSalaryConfigPayload {
   branch?: string;
   month: string;
   basicSalary: number;
-  increaseAmount?: number;
   allowances?: SalaryLineItem[];
   deductions?: SalaryLineItem[];
   notes?: string;

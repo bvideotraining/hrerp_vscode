@@ -27,6 +27,7 @@ export interface AuthResponse {
   accessType?: 'full' | 'custom';
   permissions?: { moduleId: string; moduleName: string; actions: string[] }[];
   scopeType?: string[];
+  scopeJobTitles?: string[];
   employeeId?: string;
   employeeCode?: string;
   branch?: string;

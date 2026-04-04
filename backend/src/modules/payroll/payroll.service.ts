@@ -14,6 +14,7 @@ import {
   UpdatePayrollDto,
   PayrollFilterDto,
   BatchGeneratePayrollDto,
+  BatchGenerateFilteredDto,
   BatchGenerateResultDto,
 } from './dto/payroll.dto';
 
@@ -34,6 +35,24 @@ export class PayrollService {
   /** Deterministic document ID prevents duplicates */
   private docId(employeeId: string, payrollMonth: string): string {
     return `${employeeId}_${payrollMonth}`;
+  }
+
+  /**
+   * Look up the month range whose endDate falls in payrollMonth (YYYY-MM).
+   * Returns { periodStart, periodEnd } when found; both undefined as fallback.
+   * This ensures single-employee generate/update uses the same period window as batch.
+   */
+  private async resolvePeriod(payrollMonth: string): Promise<{ periodStart?: string; periodEnd?: string }> {
+    try {
+      const monthRanges = await this.organizationService.getMonthRanges();
+      const range = (monthRanges as any[]).find(
+        (r: any) => (r.endDate ?? '').substring(0, 7) === payrollMonth,
+      );
+      if (range?.startDate && range?.endDate) {
+        return { periodStart: range.startDate, periodEnd: range.endDate };
+      }
+    } catch { /* non-critical; fall back to month-prefix matching */ }
+    return {};
   }
 
   // ─── LIST ────────────────────────────────────────────────────────────────
@@ -113,12 +132,17 @@ export class PayrollService {
       }
     }
 
+    // Resolve period boundaries so date filtering matches batch generation
+    const { periodStart, periodEnd } = await this.resolvePeriod(dto.payrollMonth);
+
     // Collect all source data in parallel
     const source = await this.dataSource.collectFor(
       dto.employeeId,
       dto.payrollMonth,
       dto.overrideBasicSalary,
       dto.overrideCashAdvance,
+      periodStart,
+      periodEnd,
     );
 
     // Run calculation engine
@@ -138,12 +162,16 @@ export class PayrollService {
       basicSalary: breakdown.basicSalary,
       increaseAmount: breakdown.increaseAmount,
       grossSalary: breakdown.grossSalary,
-      housingAllowance: breakdown.housingAllowance,
+      saturdayShiftAllowance: breakdown.saturdayShiftAllowance,
+      dutyAllowance: breakdown.dutyAllowance,
+      pottyTrainingAllowance: breakdown.pottyTrainingAllowance,
+      afterSchoolAllowance: breakdown.afterSchoolAllowance,
       transportationAllowance: breakdown.transportationAllowance,
-      mealAllowance: breakdown.mealAllowance,
-      otherAllowances: breakdown.otherAllowances,
+      extraBonusAllowance: breakdown.extraBonusAllowance,
+      otherBonusAllowance: breakdown.otherBonusAllowance,
       totalAllowances: breakdown.totalAllowances,
       bonuses: breakdown.bonuses,
+      bonusNotes: breakdown.bonusNotes,
       totalSalary: breakdown.totalSalary,
 
       // Deductions
@@ -202,12 +230,15 @@ export class PayrollService {
       throw new ForbiddenException('Published payroll records cannot be edited.');
     }
 
-    // Re-run calculation with overrides
+    // Re-run calculation with overrides, using the same period window as batch generation
+    const { periodStart, periodEnd } = await this.resolvePeriod(current.payrollMonth);
     const source = await this.dataSource.collectFor(
       current.employeeId,
       current.payrollMonth,
       dto.overrideBasicSalary ?? current.overrideBasicSalary,
       dto.overrideCashAdvance ?? current.cashAdvance,
+      periodStart,
+      periodEnd,
     );
     const breakdown = this.calculator.calculate(source);
     const now = new Date().toISOString();
@@ -216,12 +247,16 @@ export class PayrollService {
       basicSalary: breakdown.basicSalary,
       increaseAmount: breakdown.increaseAmount,
       grossSalary: breakdown.grossSalary,
-      housingAllowance: breakdown.housingAllowance,
+      saturdayShiftAllowance: breakdown.saturdayShiftAllowance,
+      dutyAllowance: breakdown.dutyAllowance,
+      pottyTrainingAllowance: breakdown.pottyTrainingAllowance,
+      afterSchoolAllowance: breakdown.afterSchoolAllowance,
       transportationAllowance: breakdown.transportationAllowance,
-      mealAllowance: breakdown.mealAllowance,
-      otherAllowances: breakdown.otherAllowances,
+      extraBonusAllowance: breakdown.extraBonusAllowance,
+      otherBonusAllowance: breakdown.otherBonusAllowance,
       totalAllowances: breakdown.totalAllowances,
       bonuses: breakdown.bonuses,
+      bonusNotes: breakdown.bonusNotes,
       totalSalary: breakdown.totalSalary,
       medicalInsurance: breakdown.medicalInsurance,
       socialInsurance: breakdown.socialInsurance,
@@ -370,6 +405,110 @@ export class PayrollService {
     return { payrollMonth, period: { startDate, endDate, monthName }, succeeded, failed, skipped };
   }
 
+  // ─── BATCH GENERATE (FILTERED) ─────────────────────────────────────────────
+
+  /**
+   * Generate payroll for employees scoped by mode:
+   *   all        → every active employee with a salary config
+   *   branch     → employees whose branch matches dto.branches[]
+   *   categories → employees whose category matches dto.categories[]
+   *   mix        → employees matching BOTH branch AND category filters
+   *
+   * Published records are skipped. Failures do not abort the batch.
+   */
+  async generateBatchFiltered(dto: BatchGenerateFilteredDto): Promise<BatchGenerateResultDto> {
+    const payrollMonth = dto.payrollMonth;
+
+    // Resolve period boundaries from organisation month ranges (best-effort)
+    const { periodStart, periodEnd } = await this.resolvePeriod(payrollMonth);
+
+    // Fetch all active employees from Firestore
+    const empSnap = await this.db
+      .collection('employees')
+      .where('employmentStatus', '==', 'Active')
+      .get();
+
+    let employees = empSnap.docs.map((d) => ({ id: d.id, ...d.data() })) as any[];
+
+    // Apply mode filters
+    if (dto.mode === 'branch' || dto.mode === 'mix') {
+      if (dto.branches && dto.branches.length > 0) {
+        employees = employees.filter((e) => dto.branches!.includes(e.branch));
+      }
+    }
+    if (dto.mode === 'categories' || dto.mode === 'mix') {
+      if (dto.categories && dto.categories.length > 0) {
+        employees = employees.filter((e) => dto.categories!.includes(e.category));
+      }
+    }
+
+    if (employees.length === 0) {
+      return {
+        payrollMonth,
+        period: {
+          startDate: periodStart ?? payrollMonth + '-01',
+          endDate: periodEnd ?? payrollMonth + '-28',
+          monthName: '',
+        },
+        succeeded: [],
+        failed: [],
+        skipped: [],
+      };
+    }
+
+    // Run generation for each employee; allSettled = no short-circuit on failure
+    const results = await Promise.allSettled(
+      employees.map(async (emp) => {
+        const existingDoc = await this.db
+          .collection('payroll')
+          .doc(this.docId(emp.id, payrollMonth))
+          .get();
+
+        if (existingDoc.exists && (existingDoc.data() as any)?.status === 'published') {
+          return { employeeId: emp.id, employeeName: emp.fullName ?? emp.id, skipped: true as const };
+        }
+
+        if (periodStart && periodEnd) {
+          await this.generateInternal(emp.id, payrollMonth, periodStart, periodEnd);
+        } else {
+          // Fallback: generate via standard single-employee path
+          await this.generate({ employeeId: emp.id, payrollMonth, notes: dto.notes });
+        }
+        return { employeeId: emp.id, employeeName: emp.fullName ?? emp.id, skipped: false as const };
+      }),
+    );
+
+    const succeeded: string[] = [];
+    const failed: { employeeId: string; employeeName: string; error: string }[] = [];
+    const skipped: string[] = [];
+
+    for (let i = 0; i < results.length; i++) {
+      const emp = employees[i];
+      const result = results[i];
+      if (result.status === 'fulfilled') {
+        result.value.skipped ? skipped.push(emp.id) : succeeded.push(emp.id);
+      } else {
+        failed.push({
+          employeeId: emp.id,
+          employeeName: emp.fullName ?? emp.id,
+          error: result.reason?.message ?? 'Unknown error',
+        });
+      }
+    }
+
+    return {
+      payrollMonth,
+      period: {
+        startDate: periodStart ?? payrollMonth + '-01',
+        endDate: periodEnd ?? payrollMonth + '-28',
+        monthName: '',
+      },
+      succeeded,
+      failed,
+      skipped,
+    };
+  }
+
   /**
    * Internal helper: generate (or overwrite draft) for a single employee
    * using an explicit date range for period-aware data collection.
@@ -405,12 +544,16 @@ export class PayrollService {
       basicSalary: breakdown.basicSalary,
       increaseAmount: breakdown.increaseAmount,
       grossSalary: breakdown.grossSalary,
-      housingAllowance: breakdown.housingAllowance,
+      saturdayShiftAllowance: breakdown.saturdayShiftAllowance,
+      dutyAllowance: breakdown.dutyAllowance,
+      pottyTrainingAllowance: breakdown.pottyTrainingAllowance,
+      afterSchoolAllowance: breakdown.afterSchoolAllowance,
       transportationAllowance: breakdown.transportationAllowance,
-      mealAllowance: breakdown.mealAllowance,
-      otherAllowances: breakdown.otherAllowances,
+      extraBonusAllowance: breakdown.extraBonusAllowance,
+      otherBonusAllowance: breakdown.otherBonusAllowance,
       totalAllowances: breakdown.totalAllowances,
       bonuses: breakdown.bonuses,
+      bonusNotes: breakdown.bonusNotes,
       totalSalary: breakdown.totalSalary,
       medicalInsurance: breakdown.medicalInsurance,
       socialInsurance: breakdown.socialInsurance,

@@ -25,6 +25,10 @@ export class CreateCashAdvanceDto {
   @IsString()
   employeeCode: string;
 
+  /** Snapshot of employee branch at request time */
+  @IsString()
+  branch: string;
+
   /** Total cash advance amount requested */
   @IsNumber()
   @Min(1)

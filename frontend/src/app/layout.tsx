@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import { AuthProvider } from "@/context/auth-context";
 import { BrandingProvider } from "@/context/branding-context";
-import { SettingsProvider } from "@/context/settings-context";
 import "@/styles/globals.css";
 
 export const metadata: Metadata = {
@@ -21,9 +20,7 @@ export default function RootLayout({
       <body suppressHydrationWarning>
         <AuthProvider>
           <BrandingProvider>
-            <SettingsProvider>
-              {children}
-            </SettingsProvider>
+            {children}
           </BrandingProvider>
         </AuthProvider>
       </body>

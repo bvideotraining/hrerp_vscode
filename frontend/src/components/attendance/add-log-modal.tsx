@@ -35,9 +35,23 @@ function calcLateMinutes(
   if (!rule || rule.isFlexible || !rule.workStart) return 0;
   const [wh, wm] = rule.workStart.split(':').map(Number);
   const [ch, cm] = checkIn.split(':').map(Number);
-  const cutoff = wh * 60 + wm + (Number(rule.freeMinutes) || 0);
-  const arrived = ch * 60 + cm;
-  return Math.max(0, arrived - cutoff);
+  // Align with backend: late = checkIn - workStart (freeMinutes is a deduction-schedule grace tier, not a status grace)
+  return Math.max(0, ch * 60 + cm - (wh * 60 + wm));
+}
+
+function calcDeductionDays(
+  lateMinutes: number,
+  category: string,
+  rules: any[],
+): number {
+  if (lateMinutes <= 0) return 0;
+  const rule = rules.find((r: any) => r.category === category);
+  if (!rule?.deductionSchedule?.length) return 0;
+  const sorted = [...rule.deductionSchedule].sort((a: any, b: any) => a.upToMinutes - b.upToMinutes);
+  for (const entry of sorted) {
+    if (lateMinutes <= entry.upToMinutes) return entry.days;
+  }
+  return sorted[sorted.length - 1].days;
 }
 
 export function AddLogModal({ record, onSave, onClose, isSaving }: AddLogModalProps) {
@@ -68,6 +82,11 @@ export function AddLogModal({ record, onSave, onClose, isSaving }: AddLogModalPr
   // Computed values (preview)
   const [previewLate, setPreviewLate] = useState(record?.lateMinutes || 0);
   const [isManualLate, setIsManualLate] = useState(record?.lateMinutesOverride !== undefined);
+  const [previewDeductionDays, setPreviewDeductionDays] = useState(0);
+  const [isManualDeduction, setIsManualDeduction] = useState(record?.deductionDaysOverride !== undefined);
+  // Track whether the user manually changed the status dropdown
+  const [isManualStatus, setIsManualStatus] = useState(!!record);
+  const [duplicateError, setDuplicateError] = useState<string | null>(null);
 
   useEffect(() => {
     organizationService.getAttendanceRules().then(setAttendanceRules).catch(() => {});
@@ -76,7 +95,10 @@ export function AddLogModal({ record, onSave, onClose, isSaving }: AddLogModalPr
 
   // Recompute preview late minutes when checkIn or category changes (unless manual)
   useEffect(() => {
-    if (isManualLate || !form.checkIn) return;
+    if (isManualLate || !form.checkIn) {
+      if (!form.checkIn) setPreviewLate(0);
+      return;
+    }
     if (form.status === 'absent' || form.status === 'on_leave' || form.status === 'unpaid_leave') {
       setPreviewLate(0);
       return;
@@ -84,6 +106,29 @@ export function AddLogModal({ record, onSave, onClose, isSaving }: AddLogModalPr
     const late = calcLateMinutes(form.checkIn, form.category, attendanceRules);
     setPreviewLate(late);
   }, [form.checkIn, form.category, form.status, attendanceRules, isManualLate]);
+
+  // Auto-update status to 'late' / 'present' based on late minutes (unless user manually set status)
+  useEffect(() => {
+    if (isManualStatus) return;
+    if (form.status === 'absent' || form.status === 'on_leave' || form.status === 'unpaid_leave') return;
+    const effectiveLate = isManualLate ? (form.lateMinutesOverride ?? 0) : previewLate;
+    setForm((f) => ({ ...f, status: effectiveLate > 0 ? 'late' : 'present' }));
+  }, [previewLate, form.lateMinutesOverride, isManualLate, isManualStatus]);
+
+  // Auto-calculate deduction days from late minutes + deduction schedule
+  useEffect(() => {
+    if (isManualDeduction) return;
+    if (form.status === 'absent' || form.status === 'unpaid_leave') {
+      setPreviewDeductionDays(1);
+      return;
+    }
+    if (form.status === 'on_leave') {
+      setPreviewDeductionDays(0);
+      return;
+    }
+    const effectiveLate = isManualLate ? (form.lateMinutesOverride ?? 0) : previewLate;
+    setPreviewDeductionDays(calcDeductionDays(effectiveLate, form.category, attendanceRules));
+  }, [previewLate, form.lateMinutesOverride, form.status, form.category, attendanceRules, isManualLate, isManualDeduction]);
 
   const filteredEmployees = empSearch.length > 0
     ? employees.filter((e) =>
@@ -111,13 +156,24 @@ export function AddLogModal({ record, onSave, onClose, isSaving }: AddLogModalPr
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    setDuplicateError(null);
     const payload: AttendanceFormData = { ...form };
     if (isManualLate && form.lateMinutesOverride !== undefined) {
       payload.lateMinutesOverride = form.lateMinutesOverride;
     } else {
       delete payload.lateMinutesOverride;
     }
-    await onSave(payload);
+    if (isManualDeduction && form.deductionDaysOverride !== undefined) {
+      payload.deductionDaysOverride = form.deductionDaysOverride;
+    } else if (!isManualDeduction) {
+      // Pass auto-calculated value as override so backend uses it directly
+      payload.deductionDaysOverride = previewDeductionDays;
+    }
+    try {
+      await onSave(payload);
+    } catch (err) {
+      setDuplicateError(err instanceof Error ? err.message : 'This log already exists');
+    }
   }
 
   const isSaturday = isSaturdayDate(form.date);
@@ -139,6 +195,28 @@ export function AddLogModal({ record, onSave, onClose, isSaving }: AddLogModalPr
             </svg>
           </button>
         </div>
+
+        {/* Duplicate error banner */}
+        {duplicateError && (
+          <div className="mx-6 mt-4 flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3">
+            <svg className="h-5 w-5 shrink-0 text-red-500 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+            </svg>
+            <div className="flex-1">
+              <p className="text-sm font-semibold text-red-700">Duplicate Entry</p>
+              <p className="text-xs text-red-600 mt-0.5">{duplicateError}</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setDuplicateError(null)}
+              className="text-red-400 hover:text-red-600 transition-colors"
+            >
+              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        )}
 
         <form onSubmit={handleSubmit} className="px-6 py-5 space-y-4">
           {/* Employee name dropdown */}
@@ -199,10 +277,20 @@ export function AddLogModal({ record, onSave, onClose, isSaving }: AddLogModalPr
 
           {/* Status */}
           <div>
-            <label className="block text-xs font-medium text-slate-500 mb-1">Status *</label>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-xs font-medium text-slate-500">Status *</label>
+              {!isManualStatus && (form.status === 'late' || form.status === 'present') && form.checkIn && (
+                <span className="text-[10px] bg-amber-50 text-amber-600 border border-amber-200 rounded px-1.5 py-0.5">
+                  auto-detected
+                </span>
+              )}
+            </div>
             <select
               value={form.status}
-              onChange={(e) => handleField('status', e.target.value as AttendanceStatus)}
+              onChange={(e) => {
+                setIsManualStatus(true);
+                handleField('status', e.target.value as AttendanceStatus);
+              }}
               required
               className="w-full h-9 rounded-lg border border-slate-200 px-3 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
@@ -210,6 +298,15 @@ export function AddLogModal({ record, onSave, onClose, isSaving }: AddLogModalPr
                 <option key={s.value} value={s.value}>{s.label}</option>
               ))}
             </select>
+            {isManualStatus && (
+              <button
+                type="button"
+                onClick={() => setIsManualStatus(false)}
+                className="mt-1 text-[10px] text-blue-500 hover:underline"
+              >
+                Reset to auto-detect
+              </button>
+            )}
           </div>
 
           {/* Check In / Check Out */}
@@ -282,20 +379,33 @@ export function AddLogModal({ record, onSave, onClose, isSaving }: AddLogModalPr
           {/* Deduction Days */}
           <div>
             <div className="flex items-center justify-between mb-1">
-              <label className="text-xs font-medium text-slate-500">Deduction Days</label>
-              <span className="text-xs text-slate-400">
-                {(form.status === 'absent' || form.status === 'unpaid_leave') && form.deductionDaysOverride === undefined
-                  ? 'Default: 1 day'
-                  : ''}
-              </span>
+              <label className="text-xs font-medium text-slate-500">
+                Deduction Days
+                {!isManualDeduction && (
+                  <span className="ml-2 text-blue-500">(auto-calculated: {previewDeductionDays} day{previewDeductionDays !== 1 ? 's' : ''})</span>
+                )}
+              </label>
+              <label className="flex items-center gap-1.5 text-xs text-slate-500 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={isManualDeduction}
+                  onChange={(e) => {
+                    setIsManualDeduction(e.target.checked);
+                    if (!e.target.checked) handleField('deductionDaysOverride', undefined);
+                  }}
+                  className="rounded"
+                />
+                Manual override
+              </label>
             </div>
             <input
               type="number"
               min={0}
-              placeholder={form.status === 'absent' || form.status === 'unpaid_leave' ? '1' : '0'}
-              value={form.deductionDaysOverride ?? ''}
+              placeholder={isManualDeduction ? 'Enter days...' : String(previewDeductionDays)}
+              value={isManualDeduction ? (form.deductionDaysOverride ?? '') : previewDeductionDays}
+              disabled={!isManualDeduction}
               onChange={(e) => handleField('deductionDaysOverride', e.target.value === '' ? undefined : Number(e.target.value))}
-              className="w-full h-9 rounded-lg border border-slate-200 px-3 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full h-9 rounded-lg border border-slate-200 px-3 text-sm text-slate-800 disabled:bg-slate-50 disabled:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
 

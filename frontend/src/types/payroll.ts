@@ -5,7 +5,6 @@ export type PayrollStatus = 'draft' | 'published';
 export interface AttendanceSummary {
   lateMinutes: number;
   deductionDays: number;
-  absenceDays?: number;
 }
 
 export interface LeaveSummary {
@@ -27,12 +26,16 @@ export interface PayrollRecord {
   basicSalary: number;
   increaseAmount: number;
   grossSalary: number;
-  housingAllowance: number;
+  saturdayShiftAllowance: number;
+  dutyAllowance: number;
+  pottyTrainingAllowance: number;
+  afterSchoolAllowance: number;
   transportationAllowance: number;
-  mealAllowance: number;
-  otherAllowances: number;
+  extraBonusAllowance: number;
+  otherBonusAllowance: number;
   totalAllowances: number;
   bonuses: number;
+  bonusNotes?: string | null;
   totalSalary: number;
 
   // Deductions
@@ -67,6 +70,23 @@ export interface GeneratePayrollPayload {
   notes?: string;
 }
 
+export type GenerateMode = 'single' | 'all' | 'branch' | 'categories' | 'mix';
+
+export interface BatchGeneratePayrollPayload {
+  mode: 'all' | 'branch' | 'categories' | 'mix';
+  payrollMonth: string; // YYYY-MM
+  branches?: string[];
+  categories?: string[];
+  notes?: string;
+}
+
+export interface BatchGenerateResult {
+  payrollMonth: string;
+  succeeded: string[];
+  failed: { employeeId: string; employeeName: string; error: string }[];
+  skipped: string[];
+}
+
 export interface UpdatePayrollPayload {
   overrideBasicSalary?: number;
   overrideCashAdvance?: number;
@@ -89,14 +109,6 @@ export interface PayrollListResponse {
   total: number;
   page: number;
   limit: number;
-}
-
-export interface BatchGenerateResult {
-  payrollMonth: string;
-  period: { startDate: string; endDate: string; monthName: string };
-  succeeded: string[];
-  failed: { employeeId: string; employeeName: string; error: string }[];
-  skipped: string[];
 }
 
 // Used for Excel/PDF export rows

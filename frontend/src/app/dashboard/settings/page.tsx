@@ -10,13 +10,14 @@ import AuthSettingsSection from '@/components/settings/auth-settings-section';
 import BackupRestoreSection from '@/components/settings/backup-restore-section';
 import NotificationSettingsSection from '@/components/settings/notification-settings-section';
 import SystemResetSection from '@/components/settings/system-reset-section';
+import DashboardLayoutBuilder from '@/components/settings/dashboard-layout-builder';
 import {
   Users, ShieldCheck, SlidersHorizontal, KeyRound,
-  Database, Bell, Trash2,
+  Database, Bell, Trash2, LayoutDashboard,
 } from 'lucide-react';
 
 type Section =
-  | 'users' | 'roles' | 'config' | 'auth' | 'backup' | 'notifications' | 'reset';
+  | 'users' | 'roles' | 'config' | 'auth' | 'backup' | 'notifications' | 'reset' | 'dashboard_layouts';
 
 const NAV_GROUPS = [
   {
@@ -31,6 +32,7 @@ const NAV_GROUPS = [
     items: [
       { id: 'config' as Section, label: 'System Configuration', icon: SlidersHorizontal, description: 'Currency, holidays, etc.' },
       { id: 'auth' as Section, label: 'Auth Settings', icon: KeyRound, description: 'Google Authentication' },
+      { id: 'dashboard_layouts' as Section, label: 'Dashboard Layouts', icon: LayoutDashboard, description: 'Customize per-role widgets' },
     ],
   },
   {
@@ -60,7 +62,8 @@ function SettingsContent() {
       case 'auth':          return <AuthSettingsSection />;
       case 'backup':        return <BackupRestoreSection />;
       case 'notifications': return <NotificationSettingsSection />;
-      case 'reset':         return <SystemResetSection />;
+      case 'reset':             return <SystemResetSection />;
+      case 'dashboard_layouts': return <DashboardLayoutBuilder />;
     }
   };
 

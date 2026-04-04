@@ -5,15 +5,15 @@ import { EmployeeForm } from '@/components/forms/employee-form';
 import { ToastContainer } from '@/components/ui/toast-container';
 import { useToast } from '@/hooks/use-toast';
 import { useEmployee } from '@/hooks/use-employee';
-import { EmployeeFormData } from '@/types/employee';
+import { Employee } from '@/types/employee';
 
 export default function AddEmployeePage() {
   const router = useRouter();
   const { toasts, dismiss, success, error } = useToast();
   const { createEmployee, loading } = useEmployee();
 
-  const handleSubmit = async (formData: EmployeeFormData) => {
-    const employeeId = await createEmployee(formData);
+  const handleSubmit = async (formData: Partial<Employee>) => {
+    const employeeId = await createEmployee(formData as any);
 
     if (employeeId) {
       success(`✓ Employee "${formData.fullName}" created successfully!`);
@@ -41,7 +41,7 @@ export default function AddEmployeePage() {
           </div>
 
           <EmployeeForm
-            onSubmit={handleSubmit as any}
+            onSubmit={handleSubmit}
             onCancel={handleCancel}
             isLoading={loading}
           />

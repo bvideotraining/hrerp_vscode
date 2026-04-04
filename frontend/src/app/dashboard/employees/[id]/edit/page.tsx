@@ -2,7 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { EmployeeData, EmployeeFormData } from '@/types/employee';
+import { EmployeeData } from '@/types/employee';
+import { Employee } from '@/types/employee';
 import { EmployeeForm } from '@/components/forms/employee-form';
 import { ToastContainer } from '@/components/ui/toast-container';
 import { useToast } from '@/hooks/use-toast';
@@ -37,8 +38,8 @@ export default function EditEmployeePage({ params }: EditEmployeePageProps) {
     }
   };
 
-  const handleSubmit = async (formData: EmployeeFormData) => {
-    const isSuccess = await updateEmployee(id, formData);
+  const handleSubmit = async (formData: Partial<Employee>) => {
+    const isSuccess = await updateEmployee(id, formData as any);
 
     if (isSuccess) {
       success(`✓ Employee "${formData.fullName}" updated successfully!`);
@@ -89,7 +90,7 @@ export default function EditEmployeePage({ params }: EditEmployeePageProps) {
 
           <EmployeeForm
             initialData={employee as any}
-            onSubmit={handleSubmit as any}
+            onSubmit={handleSubmit}
             onCancel={handleCancel}
             isLoading={loading}
           />

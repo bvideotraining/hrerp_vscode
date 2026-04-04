@@ -69,6 +69,14 @@ export class SalaryIncreasesController {
     return this.service.bulkSave(dto);
   }
 
+  @Post(':id/apply')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Apply a scheduled salary increase — updates status to applied and writes to salary_config (admin only)' })
+  apply(@Param('id') id: string, @Req() req: any) {
+    if (!isAppAdmin(req.user)) throw new ForbiddenException('Insufficient permissions');
+    return this.service.applyScheduledIncrease(id);
+  }
+
   @Post()
   @HttpCode(201)
   @ApiOperation({ summary: 'Add salary increase (admin only)' })

@@ -25,17 +25,11 @@ async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
 }
 
 class EmployeeService {
-  // Simple in-memory TTL cache (20 s) for the full employee list
-  private _listCache: { data: Employee[]; ts: number } | null = null;
-  private readonly _listTTL = 20_000;
-  private _invalidateList() { this._listCache = null; }
-
   async createEmployee(employeeData: Partial<Employee>): Promise<string> {
     const result = await apiFetch<{ id: string }>('/api/employees', {
       method: 'POST',
       body: JSON.stringify(employeeData),
     });
-    this._invalidateList();
     return result.id;
   }
 
@@ -45,18 +39,9 @@ class EmployeeService {
     if (filters?.department) params.set('department', filters.department);
     if (filters?.status) params.set('employmentStatus', filters.status);
     if (filters?.category) params.set('category', filters.category);
+
     const qs = params.toString();
-    // Only cache the unfilterd list (used by dashboard + dropdowns)
-    if (!qs) {
-      if (this._listCache && Date.now() - this._listCache.ts < this._listTTL) {
-        return Promise.resolve(this._listCache.data);
-      }
-      return apiFetch<Employee[]>('/api/employees').then((data) => {
-        this._listCache = { data, ts: Date.now() };
-        return data;
-      });
-    }
-    return apiFetch<Employee[]>(`/api/employees?${qs}`);
+    return apiFetch<Employee[]>(`/api/employees${qs ? `?${qs}` : ''}`);
   }
 
   async getEmployeeById(employeeId: string): Promise<Employee | null> {
@@ -72,7 +57,6 @@ class EmployeeService {
       method: 'PUT',
       body: JSON.stringify(updateData),
     });
-    this._invalidateList();
   }
 
   async updateEmployeeDocuments(employeeId: string, documents: any[]): Promise<void> {
@@ -117,7 +101,6 @@ class EmployeeService {
     await apiFetch(`/api/employees/${encodeURIComponent(employeeId)}`, {
       method: 'DELETE',
     });
-    this._invalidateList();
   }
 
   async searchEmployees(searchTerm: string): Promise<Employee[]> {

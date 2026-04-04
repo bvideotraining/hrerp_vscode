@@ -1,13 +1,12 @@
-'use client';
+﻿'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import Link from 'next/link';
 import {
   Save,
   Search,
   Plus,
   Trash2,
-  Download,
-  Edit2,
   AlertTriangle,
   CheckCircle,
   X,
@@ -16,9 +15,8 @@ import {
   Lock,
   User,
   Banknote,
-  FileSpreadsheet,
-  FileText,
-  ChevronDown,
+  ExternalLink,
+  Download,
 } from 'lucide-react';
 import { useAuth } from '@/context/auth-context';
 import { employeeService } from '@/lib/services/employee.service';
@@ -26,7 +24,7 @@ import { useSalaryConfig, calcDerived } from '@/hooks/use-salary-config';
 import type { Employee } from '@/types/employee';
 import type { SalaryLineItem, SalaryConfig } from '@/types/salary-config';
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
+// â”€â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function isAppAdmin(user: any): boolean {
   return user?.accessType === 'full';
@@ -37,7 +35,7 @@ function fmtAmt(n: number | undefined): string {
 }
 
 function monthLabel(yyyymm: string): string {
-  if (!yyyymm) return '—';
+  if (!yyyymm) return 'â€”';
   const [y, m] = yyyymm.split('-');
   return new Date(parseInt(y, 10), parseInt(m, 10) - 1, 1).toLocaleDateString('en-US', {
     month: 'long',
@@ -65,7 +63,7 @@ function generateMonthOptions(yearsBack = 2, yearsForward = 1) {
 
 const MONTH_OPTIONS = generateMonthOptions();
 
-// ─── Source badge ─────────────────────────────────────────────────────────────
+// â”€â”€â”€ Source badge â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function SourceBadge({ source }: { source?: string }) {
   if (!source || source === 'manual') return null;
@@ -87,13 +85,13 @@ function SourceBadge({ source }: { source?: string }) {
   );
 }
 
-// ─── LineItemEditor ───────────────────────────────────────────────────────────
+// â”€â”€â”€ LineItemEditor â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 interface LineItemEditorProps {
   items: SalaryLineItem[];
   onChange: (items: SalaryLineItem[]) => void;
   disabled?: boolean;
-  /** Handler for the Import button — if omitted, Import button is hidden */
+  /** Handler for the Import button â€” if omitted, Import button is hidden */
   onImport?: () => void;
   importLabel?: string;
   importing?: boolean;
@@ -118,7 +116,7 @@ function LineItemEditor({
     const name = addName.trim();
     const amount = parseFloat(addAmount);
     if (!name) { setAddError('Name is required'); return; }
-    if (isNaN(amount) || amount < 0) { setAddError('Amount must be ≥ 0'); return; }
+    if (isNaN(amount) || amount < 0) { setAddError('Amount must be â‰¥ 0'); return; }
     setAddError('');
     onChange([...items, { name, amount, source: 'manual' }]);
     setAddName('');
@@ -148,7 +146,7 @@ function LineItemEditor({
 
   return (
     <div className="space-y-2">
-      {/* ── Action buttons row (Import + Add) ────────────────────────────── */}
+      {/* â”€â”€ Action buttons row (Import + Add) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       {!disabled && (
         <div className="flex items-center gap-2 flex-wrap">
           {onImport && (
@@ -159,7 +157,7 @@ function LineItemEditor({
               className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-slate-300 text-slate-700 rounded-md hover:bg-slate-50 active:bg-slate-100 disabled:opacity-50 transition-colors"
             >
               <Download className="h-3.5 w-3.5" />
-              {importing ? 'Importing…' : (importLabel ?? 'Import')}
+              {importing ? 'Importingâ€¦' : (importLabel ?? 'Import')}
             </button>
           )}
           <button
@@ -173,14 +171,14 @@ function LineItemEditor({
         </div>
       )}
 
-      {/* ── Inline add form ───────────────────────────────────────────────── */}
+      {/* â”€â”€ Inline add form â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       {showAdd && !disabled && (
         <div className="flex items-start gap-2 p-2.5 bg-slate-50 border border-slate-200 rounded-lg">
           <div className="flex-1 min-w-0">
             <input
               type="text"
               autoFocus
-              placeholder="Item name…"
+              placeholder="Item nameâ€¦"
               value={addName}
               onChange={(e) => setAddName(e.target.value)}
               onKeyDown={(e) => {
@@ -221,7 +219,7 @@ function LineItemEditor({
         </div>
       )}
 
-      {/* ── Items list ────────────────────────────────────────────────────── */}
+      {/* â”€â”€ Items list â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       {items.length === 0 && !showAdd ? (
         <p className="text-sm text-slate-400 text-center py-6 italic">
           {emptyText ?? 'No items added'}
@@ -264,419 +262,7 @@ function LineItemEditor({
   );
 }
 
-// ─── DeleteConfirm modal ──────────────────────────────────────────────────────
-
-function DeleteConfirm({
-  label,
-  onConfirm,
-  onCancel,
-  busy,
-}: {
-  label: string;
-  onConfirm: () => void;
-  onCancel: () => void;
-  busy: boolean;
-}) {
-  return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm p-6">
-        <div className="flex items-center gap-3 mb-4">
-          <div className="p-2 bg-red-100 rounded-full shrink-0">
-            <AlertTriangle className="h-5 w-5 text-red-600" />
-          </div>
-          <div>
-            <h3 className="font-semibold text-slate-900">Delete Salary Config</h3>
-            <p className="text-sm text-slate-500 mt-0.5">This action cannot be undone.</p>
-          </div>
-        </div>
-        <p className="text-sm text-slate-700 mb-5">
-          Delete config for <strong>{label}</strong>?
-        </p>
-        <div className="flex gap-3">
-          <button
-            onClick={onCancel}
-            disabled={busy}
-            className="flex-1 px-4 py-2 border border-slate-200 rounded-lg text-sm text-slate-600 hover:bg-slate-50 disabled:opacity-50"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={onConfirm}
-            disabled={busy}
-            className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-semibold hover:bg-red-700 disabled:opacity-50"
-          >
-            {busy ? 'Deleting…' : 'Delete'}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ─── HistoryTable ─────────────────────────────────────────────────────────────
-
-interface HistoryTableProps {
-  records: SalaryConfig[];
-  loading: boolean;
-  search: string;
-  onSearchChange: (v: string) => void;
-  onEdit: (cfg: SalaryConfig) => void;
-  onDelete: (id: string, month: string, label: string) => void;
-  isAdmin: boolean;
-}
-
-function SkeletonHistoryRow() {
-  return (
-    <tr className="border-b border-slate-100">
-      {Array.from({ length: 9 }).map((_, i) => (
-        <td key={i} className="px-4 py-3">
-          <div
-            className="h-4 bg-slate-200 rounded animate-pulse"
-            style={{ width: i === 0 ? '30%' : i === 1 ? '70%' : '50%' }}
-          />
-        </td>
-      ))}
-    </tr>
-  );
-}
-
-async function exportToExcel(rows: SalaryConfig[]) {
-  const XLSX = await import('xlsx');
-  const data = rows.map((cfg) => ({
-    'Emp Code': cfg.employeeCode,
-    'Emp Name': cfg.employeeName,
-    Month: cfg.month === '—' || !cfg.month ? '—' : monthLabel(cfg.month),
-    'Basic Salary': cfg.basicSalary ?? 0,
-    'Increase Amount': cfg.increaseAmount ?? 0,
-    'Gross Salary': cfg.grossSalary ?? 0,
-    'Bonus Items':
-      (cfg.allowances || []).map((a) => `${a.name}: ${fmtAmt(a.amount)}`).join(', ') || '—',
-    'Deduction Items':
-      (cfg.deductions || []).map((d) => `${d.name}: ${fmtAmt(d.amount)}`).join(', ') || '—',
-    'Total Salary': cfg.totalSalary ?? 0,
-  }));
-  const ws = XLSX.utils.json_to_sheet(data);
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Salary Config History');
-  XLSX.writeFile(wb, 'salary-config-history.xlsx');
-}
-
-async function exportToPdf(rows: SalaryConfig[]) {
-  const { default: jsPDF } = await import('jspdf');
-  const { default: autoTable } = await import('jspdf-autotable');
-  const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' });
-  doc.setFontSize(13);
-  doc.text('Salary Configurations History', 40, 36);
-  autoTable(doc, {
-    startY: 52,
-    head: [
-      ['Emp Code', 'Emp Name', 'Month', 'Basic Salary', 'Increase', 'Gross Salary', 'Bonus Items', 'Deduction Items', 'Total Salary'],
-    ],
-    body: rows.map((cfg) => [
-      cfg.employeeCode,
-      cfg.employeeName,
-      cfg.month === '—' || !cfg.month ? '—' : monthLabel(cfg.month),
-      fmtAmt(cfg.basicSalary),
-      (cfg.increaseAmount ?? 0) > 0 ? `+${fmtAmt(cfg.increaseAmount)}` : '—',
-      fmtAmt(cfg.grossSalary),
-      (cfg.allowances || []).map((a) => `${a.name}: ${fmtAmt(a.amount)}`).join(', ') || '—',
-      (cfg.deductions || []).map((d) => `${d.name}: ${fmtAmt(d.amount)}`).join(', ') || '—',
-      fmtAmt(cfg.totalSalary),
-    ]),
-    styles: { fontSize: 7.5, cellPadding: 4 },
-    headStyles: { fillColor: [51, 65, 85], textColor: 255, fontStyle: 'bold' },
-    alternateRowStyles: { fillColor: [248, 250, 252] },
-    columnStyles: {
-      3: { halign: 'right' },
-      4: { halign: 'right' },
-      5: { halign: 'right' },
-      8: { halign: 'right', fontStyle: 'bold' },
-    },
-  });
-  doc.save('salary-config-history.pdf');
-}
-
-function HistoryTable({
-  records,
-  loading,
-  search,
-  onSearchChange,
-  onEdit,
-  onDelete,
-  isAdmin,
-}: HistoryTableProps) {
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [exportOpen, setExportOpen] = useState(false);
-  const exportRef = useRef<HTMLDivElement>(null);
-
-  const filtered = search
-    ? records.filter(
-        (r) =>
-          r.employeeName.toLowerCase().includes(search.toLowerCase()) ||
-          r.employeeCode.toLowerCase().includes(search.toLowerCase()) ||
-          r.month.includes(search),
-      )
-    : records;
-
-  const allChecked = filtered.length > 0 && filtered.every((r) => selectedIds.has(r.id));
-  const someChecked = filtered.some((r) => selectedIds.has(r.id));
-
-  function toggleAll() {
-    if (allChecked) {
-      setSelectedIds((prev) => {
-        const next = new Set(prev);
-        filtered.forEach((r) => next.delete(r.id));
-        return next;
-      });
-    } else {
-      setSelectedIds((prev) => {
-        const next = new Set(prev);
-        filtered.forEach((r) => next.add(r.id));
-        return next;
-      });
-    }
-  }
-
-  function toggleRow(id: string) {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }
-
-  // Close dropdown on outside click
-  useEffect(() => {
-    function handler(e: MouseEvent) {
-      if (exportRef.current && !exportRef.current.contains(e.target as Node)) {
-        setExportOpen(false);
-      }
-    }
-    if (exportOpen) document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [exportOpen]);
-
-  const selectedRows = filtered.filter((r) => selectedIds.has(r.id));
-  const exportCount = selectedRows.length;
-
-  return (
-    <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
-      {/* Header */}
-      <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between gap-4 flex-wrap">
-        <div className="flex items-center gap-3">
-          <h3 className="text-sm font-semibold text-slate-900">Salary Configurations History</h3>
-          {exportCount > 0 && (
-            <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-medium">
-              {exportCount} selected
-            </span>
-          )}
-        </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          {/* Export dropdown */}
-          <div className="relative" ref={exportRef}>
-            <button
-              onClick={() => setExportOpen((v) => !v)}
-              disabled={exportCount === 0}
-              title={exportCount === 0 ? 'Select records to export' : `Export ${exportCount} record(s)`}
-              className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg border transition-colors
-                disabled:opacity-40 disabled:cursor-not-allowed
-                enabled:border-slate-300 enabled:text-slate-700 enabled:hover:bg-slate-50 enabled:hover:border-slate-400"
-            >
-              <Download className="h-4 w-4" />
-              Export
-              <ChevronDown className={`h-3.5 w-3.5 transition-transform ${exportOpen ? 'rotate-180' : ''}`} />
-            </button>
-            {exportOpen && (
-              <div className="absolute right-0 mt-1.5 w-44 bg-white border border-slate-200 rounded-lg shadow-lg z-20 overflow-hidden">
-                <button
-                  onClick={() => { exportToExcel(selectedRows); setExportOpen(false); }}
-                  className="flex items-center gap-2.5 w-full px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition-colors"
-                >
-                  <FileSpreadsheet className="h-4 w-4 text-emerald-600" />
-                  Export as Excel
-                </button>
-                <button
-                  onClick={() => { exportToPdf(selectedRows); setExportOpen(false); }}
-                  className="flex items-center gap-2.5 w-full px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition-colors border-t border-slate-100"
-                >
-                  <FileText className="h-4 w-4 text-red-500" />
-                  Export as PDF
-                </button>
-              </div>
-            )}
-          </div>
-          {/* Search */}
-          <div className="relative w-64">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
-            <input
-              type="text"
-              placeholder="Filter history…"
-              value={search}
-              onChange={(e) => onSearchChange(e.target.value)}
-              className="w-full pl-9 pr-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
-            />
-          </div>
-        </div>
-      </div>
-
-      {/* Table */}
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[960px]">
-          <thead className="bg-slate-50 border-b border-slate-200">
-            <tr>
-              <th className="px-4 py-3 w-10">
-                <input
-                  type="checkbox"
-                  aria-label="Select all"
-                  checked={allChecked}
-                  ref={(el) => { if (el) el.indeterminate = !allChecked && someChecked; }}
-                  onChange={toggleAll}
-                  className="h-4 w-4 rounded border-slate-300 text-blue-600 cursor-pointer"
-                />
-              </th>
-              <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">
-                Emp Code
-              </th>
-              <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">
-                Emp Name
-              </th>
-              <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                Month
-              </th>
-              <th className="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">
-                Basic Salary
-              </th>
-              <th className="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">
-                Increase
-              </th>
-              <th className="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">
-                Gross Salary
-              </th>
-              <th className="px-4 py-3 text-left text-xs font-semibold text-blue-600 uppercase tracking-wider">
-                Bonus Items
-              </th>
-              <th className="px-4 py-3 text-left text-xs font-semibold text-red-600 uppercase tracking-wider">
-                Deduction Items
-              </th>
-              <th className="px-4 py-3 text-right text-xs font-semibold text-slate-900 uppercase tracking-wider whitespace-nowrap">
-                Total Salary
-              </th>
-              {isAdmin && (
-                <th className="px-4 py-3 text-center text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                  Actions
-                </th>
-              )}
-            </tr>
-          </thead>
-          <tbody>
-            {loading ? (
-              Array.from({ length: 5 }).map((_, i) => <SkeletonHistoryRow key={i} />)
-            ) : filtered.length === 0 ? (
-              <tr>
-                <td colSpan={isAdmin ? 11 : 10} className="px-4 py-16 text-center">
-                  <div className="flex flex-col items-center gap-3 text-slate-400">
-                    <Banknote className="h-10 w-10 text-slate-200" />
-                    <p className="font-medium text-sm">No salary configurations found</p>
-                  </div>
-                </td>
-              </tr>
-            ) : (
-              filtered.map((cfg) => {
-                const isChecked = selectedIds.has(cfg.id);
-                const allowanceText =
-                  (cfg.allowances || [])
-                    .map((a) => `${a.name}: ${fmtAmt(a.amount)}`)
-                    .join(', ') || '—';
-                const deductionText =
-                  (cfg.deductions || [])
-                    .map((d) => `${d.name}: ${fmtAmt(d.amount)}`)
-                    .join(', ') || '—';
-                return (
-                  <tr
-                    key={cfg.id}
-                    className={`border-b border-slate-100 transition-colors ${
-                      isChecked ? 'bg-blue-50 hover:bg-blue-50' : 'hover:bg-slate-50'
-                    }`}
-                  >
-                    <td className="px-4 py-3">
-                      <input
-                        type="checkbox"
-                        aria-label={`Select ${cfg.employeeName}`}
-                        checked={isChecked}
-                        onChange={() => toggleRow(cfg.id)}
-                        className="h-4 w-4 rounded border-slate-300 text-blue-600 cursor-pointer"
-                      />
-                    </td>
-                    <td className="px-4 py-3 text-sm font-mono text-slate-500">{cfg.employeeCode}</td>
-                    <td className="px-4 py-3 text-sm font-medium text-slate-900 whitespace-nowrap">
-                      {cfg.employeeName}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-slate-600 whitespace-nowrap">
-                      {cfg.month === '—' || !cfg.month ? '—' : monthLabel(cfg.month)}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-right text-slate-700">
-                      {fmtAmt(cfg.basicSalary)}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-right">
-                      {(cfg.increaseAmount ?? 0) > 0 ? (
-                        <span className="text-emerald-600 font-medium">
-                          +{fmtAmt(cfg.increaseAmount)}
-                        </span>
-                      ) : (
-                        <span className="text-slate-400">—</span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-right text-slate-700">
-                      {fmtAmt(cfg.grossSalary)}
-                    </td>
-                    <td className="px-4 py-3 text-xs text-blue-700 max-w-[220px] truncate" title={allowanceText}>
-                      {allowanceText}
-                    </td>
-                    <td className="px-4 py-3 text-xs text-red-700 max-w-[220px] truncate" title={deductionText}>
-                      {deductionText}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-right font-bold text-slate-900">
-                      {fmtAmt(cfg.totalSalary)}
-                    </td>
-                    {isAdmin && (
-                      <td className="px-4 py-3">
-                        <div className="flex items-center justify-center gap-1">
-                          <button
-                            onClick={() => onEdit(cfg)}
-                            title="Edit"
-                            className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
-                          >
-                            <Edit2 className="h-4 w-4" />
-                          </button>
-                          <button
-                            onClick={() =>
-                              onDelete(
-                                cfg.id,
-                                cfg.month,
-                                `${cfg.employeeName} (${cfg.month === '—' ? '—' : monthLabel(cfg.month)})`,
-                              )
-                            }
-                            title="Delete"
-                            className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </button>
-                        </div>
-                      </td>
-                    )}
-                  </tr>
-                );
-              })
-            )}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
-
-// ─── Main Section ─────────────────────────────────────────────────────────────
+// â”€â”€â”€ Main Section â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export function SalaryConfigSection() {
   const { user } = useAuth();
@@ -688,15 +274,9 @@ export function SalaryConfigSection() {
   const [selectedMonth, setSelectedMonth] = useState(currentMonthValue());
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(null);
 
-  const [deleteTarget, setDeleteTarget] = useState<{
-    id: string;
-    month: string;
-    label: string;
-  } | null>(null);
-
   const sc = useSalaryConfig();
 
-  // ─── Load employees once ──────────────────────────────────────────────────
+  // â”€â”€â”€ Load employees once â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   useEffect(() => {
     employeeService
       .getAllEmployees()
@@ -705,21 +285,9 @@ export function SalaryConfigSection() {
       .finally(() => setEmpLoading(false));
   }, []);
 
-  // ─── Load history on month change ─────────────────────────────────────────
-  useEffect(() => {
-    sc.loadHistory(selectedMonth);    sc.clearEditor();
-    setSelectedEmployeeId(null);    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedMonth]);
-
-  // ─── Select employee ───────────────────────────────────────────────────────
+  // â”€â”€â”€ Select employee â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const handleEmployeeClick = useCallback(
     (emp: Employee) => {
-      // Toggle: clicking the same employee again deselects and closes the editor
-      if (emp.id === selectedEmployeeId) {
-        setSelectedEmployeeId(null);
-        sc.clearEditor();
-        return;
-      }
       setSelectedEmployeeId(emp.id);
       sc.selectEmployee(
         emp.id,
@@ -730,10 +298,10 @@ export function SalaryConfigSection() {
         selectedMonth,
       );
     },
-    [sc, selectedMonth, selectedEmployeeId],
+    [sc, selectedMonth],
   );
 
-  // ─── Derived calculations (real-time) ────────────────────────────────────
+  // â”€â”€â”€ Derived calculations (real-time) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const derived = sc.editor
     ? calcDerived(
         sc.editor.basicSalary,
@@ -743,7 +311,7 @@ export function SalaryConfigSection() {
       )
     : null;
 
-  // ─── Filtered employees ────────────────────────────────────────────────────
+  // â”€â”€â”€ Filtered employees â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const filteredEmployees = empSearch
     ? employees.filter(
         (e) =>
@@ -752,7 +320,7 @@ export function SalaryConfigSection() {
       )
     : employees;
 
-  // ─── Access denied ────────────────────────────────────────────────────────
+  // â”€â”€â”€ Access denied â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   if (!admin) {
     return (
       <div className="flex flex-col items-center justify-center py-24 gap-4 text-slate-400">
@@ -768,7 +336,7 @@ export function SalaryConfigSection() {
   return (
     <div className="space-y-6">
 
-      {/* ── Toast / status ────────────────────────────────────────────────── */}
+      {/* â”€â”€ Toast / status â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       {sc.status && (
         <div
           className={`flex items-center gap-2 px-4 py-3 rounded-lg text-sm font-medium border ${
@@ -789,10 +357,10 @@ export function SalaryConfigSection() {
         </div>
       )}
 
-      {/* ── Two-column layout ─────────────────────────────────────────────── */}
+      {/* â”€â”€ Two-column layout â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       <div className="grid grid-cols-1 xl:grid-cols-[300px_1fr] gap-5">
 
-        {/* ── LEFT: employee list ──────────────────────────────────────────── */}
+        {/* â”€â”€ LEFT: employee list â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
         <div className="bg-white border border-slate-200 rounded-xl overflow-hidden flex flex-col">
           {/* Month filter */}
           <div className="px-4 py-3 border-b border-slate-100">
@@ -821,7 +389,7 @@ export function SalaryConfigSection() {
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
               <input
                 type="text"
-                placeholder="Search employees…"
+                placeholder="Search employeesâ€¦"
                 value={empSearch}
                 onChange={(e) => setEmpSearch(e.target.value)}
                 className="w-full pl-9 pr-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
@@ -858,7 +426,7 @@ export function SalaryConfigSection() {
                     <p className="text-sm font-semibold text-slate-900 truncate">{emp.fullName}</p>
                     <p className="text-xs text-slate-500 mt-0.5">
                       {emp.employeeCode}
-                      {emp.jobTitle ? ` • ${emp.jobTitle}` : ''}
+                      {emp.jobTitle ? ` â€¢ ${emp.jobTitle}` : ''}
                     </p>
                   </button>
                 );
@@ -867,7 +435,7 @@ export function SalaryConfigSection() {
           </div>
         </div>
 
-        {/* ── RIGHT: salary editor ─────────────────────────────────────────── */}
+        {/* â”€â”€ RIGHT: salary editor â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
         <div className="space-y-4">
           {/* No employee selected placeholder */}
           {!sc.editor && !sc.editorLoading && (
@@ -898,31 +466,29 @@ export function SalaryConfigSection() {
             <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
 
               {/* Header */}
-              <div className="px-5 py-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between gap-4 flex-wrap">
+              <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between gap-4 flex-wrap">
                 <div>
                   <h3 className="text-base font-bold text-slate-900">
-                    Salary Config for {sc.editor.employeeName} — {monthLabel(selectedMonth)}
+                    Salary Config for {sc.editor.employeeName} â€” {monthLabel(selectedMonth)}
                   </h3>
-                  <p className="text-xs text-slate-500 mt-0.5">{sc.editor.employeeCode}</p>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    {sc.editor.employeeCode}
+                    {sc.editor.branch ? (
+                      <> &nbsp;Â·&nbsp; <span className="text-indigo-600 font-medium">{sc.editor.branch}</span></>
+                    ) : null}
+                    {sc.editor.department ? (
+                      <> &nbsp;Â·&nbsp; {sc.editor.department}</>
+                    ) : null}
+                  </p>
                 </div>
-                <div className="flex items-center gap-2 shrink-0">
-                  <button
-                    onClick={() => sc.importIncreaseAmount()}
-                    disabled={sc.importingIncrease}
-                    className="flex items-center gap-2 px-4 py-2.5 bg-emerald-600 text-white rounded-lg text-sm font-semibold hover:bg-emerald-500 disabled:opacity-50 transition-colors"
-                  >
-                    <TrendingUp className="h-4 w-4" />
-                    {sc.importingIncrease ? 'Syncing…' : 'Salary Increase Update'}
-                  </button>
-                  <button
-                    onClick={() => sc.save(selectedMonth)}
-                    disabled={sc.saving}
-                    className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 text-white rounded-lg text-sm font-semibold hover:bg-indigo-500 disabled:opacity-50 transition-colors"
-                  >
-                    <Save className="h-4 w-4" />
-                    {sc.saving ? 'Saving…' : 'Save Config'}
-                  </button>
-                </div>
+                <button
+                  onClick={() => sc.save(selectedMonth)}
+                  disabled={sc.saving}
+                  className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 text-white rounded-lg text-sm font-semibold hover:bg-indigo-500 disabled:opacity-50 transition-colors shrink-0"
+                >
+                  <Save className="h-4 w-4" />
+                  {sc.saving ? 'Savingâ€¦' : 'Save Config'}
+                </button>
               </div>
 
               {/* Salary summary row */}
@@ -976,7 +542,7 @@ export function SalaryConfigSection() {
                     <p className="text-lg font-bold text-indigo-700 pt-0.5">
                       {fmtAmt(derived?.totalSalary ?? 0)}
                     </p>
-                    <p className="text-xs text-indigo-400 mt-0.5">Gross + Allowances − Ded.</p>
+                    <p className="text-xs text-indigo-400 mt-0.5">Gross + Allowances âˆ’ Ded.</p>
                   </div>
                 </div>
               </div>
@@ -998,14 +564,9 @@ export function SalaryConfigSection() {
                     importing={sc.importingAllowances}
                     emptyText="No allowances added"
                   />
-                  {/* Total allowances */}
                   <div className="mt-3 pt-2 border-t border-slate-200 flex justify-between items-center">
-                    <span className="text-xs font-semibold text-slate-500 uppercase">
-                      Total Allowances
-                    </span>
-                    <span className="text-sm font-bold text-emerald-700">
-                      {fmtAmt(derived?.totalAllowances ?? 0)}
-                    </span>
+                    <span className="text-xs font-semibold text-slate-500 uppercase">Total Allowances</span>
+                    <span className="text-sm font-bold text-emerald-700">{fmtAmt(derived?.totalAllowances ?? 0)}</span>
                   </div>
                 </div>
 
@@ -1023,14 +584,9 @@ export function SalaryConfigSection() {
                     importing={sc.importingDeductions}
                     emptyText="No deductions added"
                   />
-                  {/* Total deductions */}
                   <div className="mt-3 pt-2 border-t border-slate-200 flex justify-between items-center">
-                    <span className="text-xs font-semibold text-slate-500 uppercase">
-                      Total Deductions
-                    </span>
-                    <span className="text-sm font-bold text-red-700">
-                      {fmtAmt(derived?.totalDeductions ?? 0)}
-                    </span>
+                    <span className="text-xs font-semibold text-slate-500 uppercase">Total Deductions</span>
+                    <span className="text-sm font-bold text-red-700">{fmtAmt(derived?.totalDeductions ?? 0)}</span>
                   </div>
                 </div>
               </div>
@@ -1044,7 +600,7 @@ export function SalaryConfigSection() {
                   rows={2}
                   value={sc.editor.notes}
                   onChange={(e) => sc.setNotes(e.target.value)}
-                  placeholder="Internal notes…"
+                  placeholder="Internal notesâ€¦"
                   className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-slate-400 resize-none"
                 />
               </div>
@@ -1053,32 +609,16 @@ export function SalaryConfigSection() {
         </div>
       </div>
 
-      {/* ── History table ─────────────────────────────────────────────────── */}
-      <HistoryTable
-        records={sc.historyRecords}
-        loading={sc.historyLoading}
-        search={sc.historySearch}
-        onSearchChange={sc.setHistorySearch}
-        onEdit={(cfg) => {
-          setSelectedEmployeeId(cfg.employeeId);
-          sc.editFromHistory(cfg);
-        }}
-        onDelete={(id, month, label) => setDeleteTarget({ id, month, label })}
-        isAdmin={admin}
-      />
-
-      {/* ── Delete confirm ────────────────────────────────────────────────── */}
-      {deleteTarget && (
-        <DeleteConfirm
-          label={deleteTarget.label}
-          busy={sc.deleting}
-          onCancel={() => setDeleteTarget(null)}
-          onConfirm={async () => {
-            await sc.deleteRecord(deleteTarget.id, deleteTarget.month);
-            setDeleteTarget(null);
-          }}
-        />
-      )}
+      {/* â”€â”€ Link to history page â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+      <div className="flex items-center justify-end">
+        <Link
+          href="/dashboard/payroll/salary-config-history"
+          className="inline-flex items-center gap-2 px-4 py-2 border border-indigo-200 text-indigo-600 bg-indigo-50 hover:bg-indigo-100 text-sm font-medium rounded-lg transition-colors"
+        >
+          <ExternalLink className="h-4 w-4" />
+          View Full History
+        </Link>
+      </div>
     </div>
   );
 }

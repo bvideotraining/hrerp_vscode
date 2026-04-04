@@ -29,7 +29,7 @@ export function EmployeeList({ employees, onEdit, onDelete, onView }: EmployeeLi
       organizationService.getBranches(),
       organizationService.getDepartments(),
     ]).then(([b, d]) => {
-      setOrgBranches(b.map((x) => x.name));
+      setOrgBranches(b.filter((x) => x.isActive !== false).map((x) => x.name));
       setOrgDepartments(d.map((x) => x.name));
     }).catch(() => {});
   }, []);

@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
 import { v4 as uuidv4 } from 'uuid';
 import { FirebaseService } from '../../config/firebase/firebase.service';
+import { ScopeService } from '../common/scope.service';
 import { CreateLeaveDto, UpdateLeaveDto } from './dto/leave.dto';
 import { LeaveBalanceService } from './leave-balance.service';
 import { AttendanceService } from '../attendance/attendance.service';
@@ -9,9 +10,14 @@ const ADMIN_ROLES = ['admin', 'hr_manager'];
 const APPROVER_ROLES = ['approver', 'branch_approver'];
 const ALL_PRIVILEGED = [...ADMIN_ROLES, ...APPROVER_ROLES];
 
+/** Normalize role strings: "Branch Approver" → "branch_approver" */
+function normalizeRole(role: string): string {
+  return (role || '').toLowerCase().replace(/[\s-]+/g, '_');
+}
+
 /** Application Admin has role='employee' but accessType='full' — treat as admin */
 function isAdmin(role: string, accessType: string): boolean {
-  return ADMIN_ROLES.includes(role) || accessType === 'full';
+  return ADMIN_ROLES.includes(normalizeRole(role)) || accessType === 'full';
 }
 
 @Injectable()
@@ -20,11 +26,26 @@ export class LeavesService {
     private firebaseService: FirebaseService,
     private leaveBalanceService: LeaveBalanceService,
     private attendanceService: AttendanceService,
+    private scopeService: ScopeService,
   ) {}
 
-  async create(dto: CreateLeaveDto, createdBy: string) {
+  async create(dto: CreateLeaveDto, createdBy: string, creatorRole?: string, creatorAccessType?: string, creatorEmployeeId?: string) {
     if (dto.leaveType === 'sick' && (!dto.attachments || dto.attachments.length === 0)) {
       throw new BadRequestException('Medical report attachment is required for sick leave');
+    }
+
+    // Scope check: approvers and custom-role users can only create leaves for employees in their scope
+    const normalizedCreatorRole = normalizeRole(creatorRole || '');
+    const needsScopeCheck =
+      normalizedCreatorRole === 'approver' ||
+      normalizedCreatorRole === 'branch_approver' ||
+      creatorAccessType === 'custom';
+    if (needsScopeCheck) {
+      const allowedIds = await this.scopeService.getAllowedEmployeeIds(createdBy, creatorRole || '', creatorAccessType || '', creatorEmployeeId);
+      // allowedIds === null means admin (no restriction); empty Set with no scope means no restriction either
+      if (allowedIds !== null && allowedIds.size > 0 && !allowedIds.has(dto.employeeId)) {
+        throw new ForbiddenException('You can only create leave requests for employees in your assigned scope');
+      }
     }
     const db = this.firebaseService.getFirestore();
     const ref = db.collection('leaves').doc();
@@ -50,6 +71,7 @@ export class LeavesService {
     requesterRole?: string,
     requesterId?: string,
     accessType?: string,
+    requesterEmployeeId?: string,
   ) {
     const db = this.firebaseService.getFirestore();
     let query: any;
@@ -69,11 +91,27 @@ export class LeavesService {
     // Application Admin (accessType='full') sees all — no branch filter
     if (isAdmin(requesterRole || '', accessType || '')) return records;
 
-    // Branch approver: restrict to leaves in their branch
-    if (requesterRole === 'branch_approver' && requesterId) {
-      const userBranch = await this.getUserBranch(requesterId);
-      if (userBranch) {
-        records = records.filter((r: any) => r.employeeBranch === userBranch);
+    // Approver: restrict to leaves for employees in their configured departments
+    if (normalizeRole(requesterRole || '') === 'approver' && requesterId) {
+      const allowedIds = await this.scopeService.getAllowedEmployeeIds(requesterId, 'approver', '', requesterEmployeeId);
+      if (allowedIds !== null) {
+        records = records.filter((r: any) => allowedIds.has(r.employeeId));
+      }
+    }
+
+    // Branch approver: restrict to leaves for employees in their branch
+    if (normalizeRole(requesterRole || '') === 'branch_approver' && requesterId) {
+      const allowedIds = await this.scopeService.getAllowedEmployeeIds(requesterId, 'branch_approver', '', requesterEmployeeId);
+      if (allowedIds !== null) {
+        records = records.filter((r: any) => allowedIds.has(r.employeeId));
+      }
+    }
+
+    // Custom-role user: restrict to leaves for employees in their job title scope
+    if (accessType === 'custom' && requesterId) {
+      const allowedIds = await this.scopeService.getAllowedEmployeeIds(requesterId, requesterRole || '', accessType);
+      if (allowedIds !== null && allowedIds.size > 0) {
+        records = records.filter((r: any) => allowedIds.has(r.employeeId));
       }
     }
 
@@ -99,6 +137,7 @@ export class LeavesService {
     requesterId: string,
     requesterRole: string,
     accessType: string = '',
+    requesterEmployeeId?: string,
   ) {
     const db = this.firebaseService.getFirestore();
     const doc = await db.collection('leaves').doc(id).get();
@@ -106,28 +145,46 @@ export class LeavesService {
 
     const existing = doc.data() as any;
     const isAdminUser = isAdmin(requesterRole, accessType);
-    const isApprover = requesterRole === 'approver';
-    const isBranchApprover = requesterRole === 'branch_approver';
+    const isApprover = normalizeRole(requesterRole) === 'approver';
+    const isBranchApprover = normalizeRole(requesterRole) === 'branch_approver';
 
     if (isAdminUser) {
       // Admin/HR: full access — no restrictions
     } else if (isApprover) {
-      // Approver: can only approve/reject pending leaves
+      // Approver: can only approve/reject pending leaves in their assigned departments
       if (existing.status !== 'pending') {
         throw new ForbiddenException('Only pending requests can be approved or rejected');
+      }
+      // Scope check: ensure target employee is in allowed departments
+      const allowedIds = await this.scopeService.getAllowedEmployeeIds(requesterId, 'approver', '', requesterEmployeeId);
+      if (allowedIds !== null && !allowedIds.has(existing.employeeId)) {
+        throw new ForbiddenException('You can only approve leave requests for employees in your assigned departments');
       }
       const allowed = new Set(['status', 'approvedBy', 'rejectedReason']);
       (Object.keys(dto) as (keyof UpdateLeaveDto)[]).forEach((k) => {
         if (!allowed.has(k)) delete dto[k];
       });
     } else if (isBranchApprover) {
-      // Branch approver: can only approve/reject pending leaves within their branch
+      // Branch approver: can only approve/reject pending leaves for employees in their branch AND allowed departments
       if (existing.status !== 'pending') {
         throw new ForbiddenException('Only pending requests can be approved or rejected');
       }
-      const userBranch = await this.getUserBranch(requesterId);
-      if (userBranch && existing.employeeBranch && existing.employeeBranch !== userBranch) {
+      const allowedIds = await this.scopeService.getAllowedEmployeeIds(requesterId, 'branch_approver', '', requesterEmployeeId);
+      if (allowedIds !== null && !allowedIds.has(existing.employeeId)) {
         throw new ForbiddenException('You can only approve leave requests for employees in your branch');
+      }
+      const allowed = new Set(['status', 'approvedBy', 'rejectedReason']);
+      (Object.keys(dto) as (keyof UpdateLeaveDto)[]).forEach((k) => {
+        if (!allowed.has(k)) delete dto[k];
+      });
+    } else if (accessType === 'custom') {
+      // Custom-role approver: can only approve/reject pending leaves for employees in their scoped job titles
+      if (existing.status !== 'pending') {
+        throw new ForbiddenException('Only pending requests can be approved or rejected');
+      }
+      const allowedIds = await this.scopeService.getAllowedEmployeeIds(requesterId, requesterRole || '', accessType);
+      if (allowedIds !== null && !allowedIds.has(existing.employeeId)) {
+        throw new ForbiddenException('You can only approve leave requests for employees in your assigned scope');
       }
       const allowed = new Set(['status', 'approvedBy', 'rejectedReason']);
       (Object.keys(dto) as (keyof UpdateLeaveDto)[]).forEach((k) => {
@@ -175,7 +232,7 @@ export class LeavesService {
         leaveYear,
       );
       // Auto-create attendance records for each day of the approved leave
-      await this.createLeaveAttendanceRecords(existing, requesterId);
+      await this.createLeaveAttendanceRecords({ ...existing, id }, requesterId);
     } else if (wasApproved && (nowRejected || dto.status === 'pending')) {
       // Un-approved → restore balance and remove the generated attendance records
       await this.leaveBalanceService.restoreBalance(
@@ -185,6 +242,33 @@ export class LeavesService {
         leaveYear,
       );
       await this.removeLeaveAttendanceRecords(existing.id ?? id, existing.employeeId);
+    } else if (wasApproved && nowApproved === undefined && isAdminUser) {
+      // Admin editing an already-approved leave (dates, type, etc.) — re-sync attendance
+      const datesChanged = (dto.startDate && dto.startDate !== existing.startDate) ||
+                           (dto.endDate && dto.endDate !== existing.endDate);
+      const typeChanged = dto.leaveType && dto.leaveType !== existing.leaveType;
+      if (datesChanged || typeChanged) {
+        // Restore old balance, remove old attendance
+        await this.leaveBalanceService.restoreBalance(
+          existing.employeeId,
+          existing.leaveType,
+          existing.totalDays,
+          leaveYear,
+        );
+        await this.removeLeaveAttendanceRecords(existing.id ?? id, existing.employeeId);
+        // Deduct new balance, create new attendance
+        const merged = { ...existing, ...dto, id };
+        const newYear = merged.startDate
+          ? new Date(merged.startDate).getFullYear()
+          : leaveYear;
+        await this.leaveBalanceService.deductBalance(
+          merged.employeeId,
+          merged.leaveType,
+          merged.totalDays,
+          newYear,
+        );
+        await this.createLeaveAttendanceRecords(merged, requesterId);
+      }
     }
 
     return { id, ...existing, ...data };
@@ -204,6 +288,20 @@ export class LeavesService {
       if (existing.status !== 'pending') {
         throw new ForbiddenException('Only pending requests can be cancelled');
       }
+    }
+
+    // If deleting an approved leave, restore balance and remove generated attendance
+    if (existing.status === 'approved') {
+      const leaveYear = existing.startDate
+        ? new Date(existing.startDate).getFullYear()
+        : new Date().getFullYear();
+      await this.leaveBalanceService.restoreBalance(
+        existing.employeeId,
+        existing.leaveType,
+        existing.totalDays,
+        leaveYear,
+      );
+      await this.removeLeaveAttendanceRecords(id, existing.employeeId);
     }
 
     await db.collection('leaves').doc(id).delete();
@@ -281,7 +379,11 @@ export class LeavesService {
     const current = new Date(startDate + 'T00:00:00');
     const end = new Date(endDate + 'T00:00:00');
     while (current <= end) {
-      dates.push(current.toISOString().substring(0, 10));
+      // Use local date parts to avoid UTC timezone shift
+      const yyyy = current.getFullYear();
+      const mm = String(current.getMonth() + 1).padStart(2, '0');
+      const dd = String(current.getDate()).padStart(2, '0');
+      dates.push(`${yyyy}-${mm}-${dd}`);
       current.setDate(current.getDate() + 1);
     }
     return dates;

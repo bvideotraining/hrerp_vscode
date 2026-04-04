@@ -6,12 +6,16 @@ export interface PayrollBreakdown {
   basicSalary: number;
   increaseAmount: number;
   grossSalary: number;           // basicSalary + increaseAmount
-  housingAllowance: number;
+  saturdayShiftAllowance: number;
+  dutyAllowance: number;
+  pottyTrainingAllowance: number;
+  afterSchoolAllowance: number;
   transportationAllowance: number;
-  mealAllowance: number;
-  otherAllowances: number;
+  extraBonusAllowance: number;
+  otherBonusAllowance: number;
   totalAllowances: number;
   bonuses: number;
+  bonusNotes: string;
   totalSalary: number;           // grossSalary + totalAllowances + bonuses
 
   // Deductions
@@ -47,13 +51,17 @@ export class PayrollCalculationService {
     const increaseAmount = r(source.increaseAmount);
     const grossSalary = r(basicSalary + increaseAmount);
 
-    const housingAllowance = r(source.housingAllowance);
+    const saturdayShiftAllowance = r(source.saturdayShiftAllowance);
+    const dutyAllowance = r(source.dutyAllowance);
+    const pottyTrainingAllowance = r(source.pottyTrainingAllowance);
+    const afterSchoolAllowance = r(source.afterSchoolAllowance);
     const transportationAllowance = r(source.transportationAllowance);
-    const mealAllowance = r(source.mealAllowance);
-    const otherAllowances = r(source.otherAllowances);
+    const extraBonusAllowance = r(source.extraBonusAllowance);
+    const otherBonusAllowance = r(source.otherBonusAllowance);
     const totalAllowances = r(source.totalAllowances);
 
     const bonuses = r(source.bonuses);
+    const bonusNotes = source.bonusNotes ?? '';
     const totalSalary = r(grossSalary + totalAllowances + bonuses);
 
     // ── DEDUCTIONS ────────────────────────────────────────────────────────
@@ -76,12 +84,16 @@ export class PayrollCalculationService {
       basicSalary,
       increaseAmount,
       grossSalary,
-      housingAllowance,
+      saturdayShiftAllowance,
+      dutyAllowance,
+      pottyTrainingAllowance,
+      afterSchoolAllowance,
       transportationAllowance,
-      mealAllowance,
-      otherAllowances,
+      extraBonusAllowance,
+      otherBonusAllowance,
       totalAllowances,
       bonuses,
+      bonusNotes,
       totalSalary,
       medicalInsurance,
       socialInsurance,

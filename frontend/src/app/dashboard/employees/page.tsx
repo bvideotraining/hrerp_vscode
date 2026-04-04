@@ -1,6 +1,6 @@
 ﻿'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { ProtectedRoute } from '@/components/auth/protected-route';
 import DashboardLayout from '@/components/dashboard/layout';
@@ -13,7 +13,6 @@ import { useAuth } from '@/context/auth-context';
 import { employeeService } from '@/lib/services/employee.service';
 import { auditLoggingService } from '@/lib/services/audit-logging.service';
 import { Plus, Download, Upload, FileSpreadsheet, FileText, X, AlertCircle, Loader2 } from 'lucide-react';
-import { EmployeeImportGuideModal } from '@/components/employees/import-guide-modal';
 
 export default function EmployeesPage() {
   return (
@@ -29,14 +28,18 @@ function EmployeesContent() {
   const router = useRouter();
   const { toasts, dismiss, success, warning, error } = useToast();
   const { user } = useAuth();
-  const isOwnScope = user?.accessType === 'custom' && !!(user?.employeeId);
+  // Roles that have scope broader than their own record — should use the backend API
+  const roleKey = (user?.role || '').toLowerCase().replace(/[\s-]+/g, '_');
+  const hasElevatedScope = ['admin', 'hr_manager', 'approver', 'branch_approver', 'finance_manager', 'supervisor'].includes(roleKey)
+    || user?.accessType === 'full';
+  const isOwnScope = user?.accessType === 'custom' && !!(user?.employeeId) && !hasElevatedScope;
   const { getAllEmployees, deleteEmployee, batchCreateEmployees } = useEmployee();
   const [employees, setEmployees] = useState<EmployeeData[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [showExportMenu, setShowExportMenu] = useState(false);
-  const [showImportGuide, setShowImportGuide] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
   const [importErrors, setImportErrors] = useState<string[]>([]);
+  const importInputRef = useRef<HTMLInputElement>(null);
 
   // Close export menu when clicking outside
   useEffect(() => {
@@ -182,8 +185,12 @@ function EmployeesContent() {
   };
 
   /* â”€â”€â”€ Import handler â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
-  const handleImportFile = async (file: File) => {
-    setShowImportGuide(false);
+  const handleImportFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    // Reset input so same file can be re-selected
+    e.target.value = '';
+
     setImportErrors([]);
     setIsImporting(true);
 
@@ -269,8 +276,15 @@ function EmployeesContent() {
           <div className="flex gap-3 items-center">
 
             {/* Import button */}
+            <input
+              ref={importInputRef}
+              type="file"
+              accept=".xlsx,.xls,.csv"
+              className="hidden"
+              onChange={handleImportFile}
+            />
             <button
-              onClick={() => setShowImportGuide(true)}
+              onClick={() => importInputRef.current?.click()}
               disabled={isImporting}
               className="px-4 py-2 border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50 transition-colors font-medium flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
               title="Import from Excel"
@@ -373,13 +387,6 @@ function EmployeesContent() {
         )}
       </div>
       <ToastContainer toasts={toasts} onDismiss={dismiss} />
-      {showImportGuide && (
-        <EmployeeImportGuideModal
-          onClose={() => setShowImportGuide(false)}
-          onFileImport={handleImportFile}
-          isImporting={isImporting}
-        />
-      )}
     </>
   );
 }

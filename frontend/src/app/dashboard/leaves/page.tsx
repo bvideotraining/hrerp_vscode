@@ -1,19 +1,19 @@
 ﻿'use client';
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useMemo } from 'react';
 import { ProtectedRoute } from '@/components/auth/protected-route';
 import DashboardLayout from '@/components/dashboard/layout';
 import { useAuth } from '@/context/auth-context';
 import {
   leavesService, leaveBalanceService,
-  LeaveRequest, LeaveBalance, LeaveType, LeaveAttachment,
+  LeaveRequest, LeaveBalance, LeaveType,
   CreateLeavePayload, LEAVE_TYPE_LABELS,
 } from '@/lib/services/leaves.service';
 import { employeeService } from '@/lib/services/employee.service';
 import { Employee } from '@/types/employee';
 import {
   Plus, X, Check, XCircle, Trash2, Calendar, Clock, User,
-  ShieldCheck, BarChart2, ChevronDown, ChevronUp, Save, Settings, Paperclip,
+  ShieldCheck, BarChart2, ChevronDown, ChevronUp, Save, Settings,
 } from 'lucide-react';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -61,37 +61,13 @@ function LeaveForm({ onClose, onSaved, ownEmployeeId, ownEmployeeName, ownEmploy
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
-  const [attachments, setAttachments] = useState<LeaveAttachment[]>([]);
-  const [uploading, setUploading] = useState(false);
   const totalDays = daysBetween(form.startDate, form.endDate);
-
-  async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const files = Array.from(e.target.files || []);
-    if (!files.length) return;
-    setUploading(true); setError('');
-    try {
-      const uploaded: LeaveAttachment[] = [];
-      for (const file of files) {
-        const result = await leavesService.uploadAttachment(file);
-        uploaded.push(result);
-      }
-      setAttachments((prev) => [...prev, ...uploaded]);
-    } catch (e: any) { setError(e.message || 'File upload failed');
-    } finally { setUploading(false); e.target.value = ''; }
-  }
-
-  function removeAttachment(index: number) {
-    setAttachments((prev) => prev.filter((_, i) => i !== index));
-  }
 
   async function handleSubmit() {
     if (!form.employeeId || !form.startDate || !form.endDate) {
       setError('Please fill in all required fields.'); return;
     }
     if (totalDays <= 0) { setError('End date must be on or after start date.'); return; }
-    if (form.leaveType === 'sick' && attachments.length === 0) {
-      setError('A medical report attachment is required for sick leave.'); return;
-    }
     setSaving(true); setError('');
     try {
       const payload: CreateLeavePayload = {
@@ -103,7 +79,6 @@ function LeaveForm({ onClose, onSaved, ownEmployeeId, ownEmployeeName, ownEmploy
         endDate:        form.endDate,
         totalDays,
         reason:         form.reason || undefined,
-        attachments:    attachments.length > 0 ? attachments : undefined,
       };
       await leavesService.create(payload);
       onSaved();
@@ -163,38 +138,6 @@ function LeaveForm({ onClose, onSaved, ownEmployeeId, ownEmployeeName, ownEmploy
               rows={3} className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
               placeholder="Briefly describe the reason for your leave..." />
           </div>
-          {/* Medical report upload — required for sick leave */}
-          {form.leaveType === 'sick' && (
-            <div>
-              <label className="block text-xs font-medium text-slate-600 mb-1">
-                Medical Report <span className="text-red-500">*</span>
-                <span className="ml-1 text-slate-400 font-normal">(required for sick leave)</span>
-              </label>
-              <label className="flex items-center gap-2 px-3 py-2 border border-dashed border-blue-300 rounded-lg cursor-pointer hover:bg-blue-50 transition-colors text-sm text-blue-600">
-                <Paperclip className="h-4 w-4 shrink-0" />
-                <span>{uploading ? 'Uploading...' : 'Click to attach file(s)'}</span>
-                <input
-                  type="file"
-                  multiple
-                  accept="image/*,application/pdf,.doc,.docx"
-                  className="hidden"
-                  disabled={uploading}
-                  onChange={handleFileChange}
-                />
-              </label>
-              {attachments.length > 0 && (
-                <ul className="mt-2 space-y-1">
-                  {attachments.map((a, i) => (
-                    <li key={i} className="flex items-center gap-2 text-xs text-slate-600 bg-slate-50 rounded px-2 py-1.5">
-                      <Paperclip className="h-3 w-3 text-slate-400 shrink-0" />
-                      <a href={a.url} target="_blank" rel="noopener noreferrer" className="flex-1 truncate text-blue-600 hover:underline">{a.name}</a>
-                      <button type="button" onClick={() => removeAttachment(i)} className="text-slate-400 hover:text-red-500"><X className="h-3 w-3" /></button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          )}
         </div>
         <div className="flex gap-3 mt-6 pt-4 border-t border-slate-100">
           <button onClick={onClose} className="flex-1 px-4 py-2 border border-slate-200 text-slate-700 rounded-lg hover:bg-slate-50 text-sm">Cancel</button>
@@ -260,7 +203,6 @@ function LeaveTable({ records, showEmployee, canApprove, canDelete, onApprove, o
               <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Dates</th>
               <th className="text-center px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Days</th>
               <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Reason</th>
-              <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Reports</th>
               <th className="text-center px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Status</th>
               <th className="px-4 py-3" />
             </tr>
@@ -280,26 +222,6 @@ function LeaveTable({ records, showEmployee, canApprove, canDelete, onApprove, o
                 </td>
                 <td className="px-4 py-3 text-center font-medium text-slate-700">{r.totalDays}</td>
                 <td className="px-4 py-3 text-slate-500 text-xs max-w-[160px] truncate">{r.reason || '-'}</td>
-                <td className="px-4 py-3">
-                  {r.leaveType === 'sick' ? (
-                    r.attachments && r.attachments.length > 0 ? (
-                      <div className="flex flex-col gap-0.5">
-                        {r.attachments.map((a, i) => (
-                          <a key={i} href={a.url} target="_blank" rel="noopener noreferrer"
-                            className="flex items-center gap-1 text-xs text-blue-600 hover:underline truncate max-w-[140px]">
-                            <Paperclip className="h-3 w-3 shrink-0" />{a.name}
-                          </a>
-                        ))}
-                      </div>
-                    ) : (
-                      <span className="inline-flex items-center gap-1 text-xs text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded">
-                        <Paperclip className="h-3 w-3" />Missing
-                      </span>
-                    )
-                  ) : (
-                    <span className="text-xs text-slate-300">—</span>
-                  )}
-                </td>
                 <td className="px-4 py-3 text-center">
                   <StatusBadge status={r.status} />
                   {r.status === 'rejected' && r.rejectedReason && <p className="text-xs text-red-500 mt-0.5">{r.rejectedReason}</p>}
@@ -591,6 +513,226 @@ function SetAllBalancesModal({ employees, year: defaultYear, onClose, onRefresh 
   );
 }
 
+// ─── Set Specific Balances Modal ────────────────────────────────────────────────
+
+interface SetSpecificBalancesModalProps {
+  employees: Employee[];
+  year: number;
+  onClose: () => void;
+  onRefresh: () => void;
+}
+
+function SetSpecificBalancesModal({ employees, year: defaultYear, onClose, onRefresh }: SetSpecificBalancesModalProps) {
+  const [targetYear, setTargetYear] = useState(defaultYear);
+  const [allocations, setAllocations] = useState<Record<string, number>>({ ...DEFAULT_ALLOCATIONS });
+  const [search, setSearch] = useState('');
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [applying, setApplying] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [done, setDone] = useState(false);
+  const [errs, setErrs] = useState<string[]>([]);
+
+  const filtered = employees.filter((e) =>
+    !search ||
+    e.fullName.toLowerCase().includes(search.toLowerCase()) ||
+    e.employeeCode.toLowerCase().includes(search.toLowerCase()),
+  );
+
+  function toggleOne(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  }
+
+  function toggleAll() {
+    if (selected.size === filtered.length && filtered.length > 0) {
+      setSelected(new Set());
+    } else {
+      setSelected(new Set(filtered.map((e) => e.id)));
+    }
+  }
+
+  async function handleApply() {
+    if (selected.size === 0) return;
+    if (!window.confirm(
+      `This will set leave balances for ${selected.size} selected employee(s) for ${targetYear}.\nExisting allocations will be overwritten. Continue?`
+    )) return;
+
+    const targets = employees.filter((e) => selected.has(e.id));
+    setApplying(true); setErrs([]); setProgress(0);
+    const failed: string[] = [];
+    for (let i = 0; i < targets.length; i++) {
+      const emp = targets[i];
+      try {
+        await leaveBalanceService.set(emp.id, {
+          employeeName: emp.fullName,
+          year: targetYear,
+          ...allocations,
+        });
+      } catch (e: any) {
+        failed.push(`${emp.fullName}: ${e.message || 'Failed'}`);
+      }
+      setProgress(i + 1);
+    }
+    setErrs(failed);
+    setApplying(false);
+    setDone(true);
+    onRefresh();
+  }
+
+  const allFilteredSelected = filtered.length > 0 && filtered.every((e) => selected.has(e.id));
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl p-6 max-h-[90vh] flex flex-col">
+        <div className="flex items-center justify-between mb-5">
+          <div>
+            <h3 className="text-lg font-bold text-slate-900">Set Leave Balance for Selected Employees</h3>
+            <p className="text-xs text-slate-500 mt-0.5">
+              {selected.size === 0
+                ? 'Select one or more employees below'
+                : <><strong>{selected.size}</strong> employee(s) selected</>}
+            </p>
+          </div>
+          <button onClick={onClose} disabled={applying} className="p-1.5 rounded hover:bg-slate-100 disabled:opacity-50">
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 flex-1 min-h-0">
+          {/* Left: employee selector */}
+          <div className="flex flex-col min-h-0">
+            <div className="flex items-center gap-2 mb-2">
+              <input
+                type="text"
+                placeholder="Search by name or code..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                disabled={applying || done}
+                className="flex-1 px-3 py-1.5 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-slate-100"
+              />
+              <button
+                type="button"
+                onClick={toggleAll}
+                disabled={applying || done || filtered.length === 0}
+                className="px-2.5 py-1.5 text-xs border border-slate-300 rounded-lg hover:bg-slate-50 disabled:opacity-50 whitespace-nowrap"
+              >
+                {allFilteredSelected ? 'Deselect all' : 'Select all'}
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto border border-slate-200 rounded-lg divide-y divide-slate-100 min-h-0" style={{ maxHeight: '280px' }}>
+              {filtered.length === 0 && (
+                <p className="text-xs text-slate-400 text-center py-6">No employees found</p>
+              )}
+              {filtered.map((emp) => (
+                <label
+                  key={emp.id}
+                  className={`flex items-center gap-3 px-3 py-2 cursor-pointer hover:bg-blue-50 transition-colors ${
+                    selected.has(emp.id) ? 'bg-blue-50' : ''
+                  } ${applying || done ? 'pointer-events-none opacity-60' : ''}`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={selected.has(emp.id)}
+                    onChange={() => toggleOne(emp.id)}
+                    className="rounded border-slate-300 text-blue-600"
+                  />
+                  <div className="min-w-0">
+                    <div className="text-sm font-medium text-slate-800 truncate">{emp.fullName}</div>
+                    <div className="text-xs text-slate-400">{emp.employeeCode} · {emp.branch}</div>
+                  </div>
+                </label>
+              ))}
+            </div>
+          </div>
+
+          {/* Right: year + allocations */}
+          <div className="flex flex-col gap-4">
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1">Target Year</label>
+              <input
+                type="number" min={2020} max={2100} value={targetYear}
+                onChange={(e) => setTargetYear(Number(e.target.value))}
+                disabled={applying || done}
+                className="w-32 px-3 py-1.5 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-slate-100"
+              />
+            </div>
+            <div>
+              <p className="text-xs font-semibold text-slate-600 uppercase tracking-wide mb-3">Allocations (days)</p>
+              <div className="grid grid-cols-2 gap-3">
+                {BALANCE_TYPES.map(({ key, label }) => (
+                  <div key={key}>
+                    <label className="block text-xs text-slate-500 mb-1">{label}</label>
+                    <input
+                      type="number" min={0} value={allocations[key] ?? 0}
+                      onChange={(e) => setAllocations((p) => ({ ...p, [key]: Number(e.target.value) }))}
+                      disabled={applying || done}
+                      className="w-full px-2 py-1.5 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-slate-100"
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Progress bar */}
+        {applying && (
+          <div className="mt-4">
+            <div className="flex justify-between text-xs text-slate-600 mb-1">
+              <span>Applying...</span>
+              <span>{progress} / {selected.size}</span>
+            </div>
+            <div className="h-2 bg-slate-200 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-blue-500 transition-all duration-200"
+                style={{ width: `${selected.size > 0 ? (progress / selected.size) * 100 : 0}%` }}
+              />
+            </div>
+          </div>
+        )}
+
+        {/* Result */}
+        {done && (
+          <div className={`mt-4 rounded-lg px-4 py-3 text-sm ${
+            errs.length === 0
+              ? 'bg-emerald-50 border border-emerald-200 text-emerald-700'
+              : 'bg-amber-50 border border-amber-200 text-amber-700'
+          }`}>
+            {errs.length === 0
+              ? `✓ Leave balances set for ${selected.size} employee(s).`
+              : `Done with ${errs.length} error(s).`}
+            {errs.length > 0 && (
+              <ul className="mt-2 text-xs list-disc list-inside space-y-0.5">
+                {errs.map((e, i) => <li key={i}>{e}</li>)}
+              </ul>
+            )}
+          </div>
+        )}
+
+        {/* Footer */}
+        <div className="flex gap-3 justify-end mt-5">
+          <button onClick={onClose} disabled={applying}
+            className="px-4 py-2 border border-slate-200 text-slate-700 rounded-lg hover:bg-slate-50 text-sm disabled:opacity-50">
+            {done ? 'Close' : 'Cancel'}
+          </button>
+          {!done && (
+            <button
+              onClick={handleApply}
+              disabled={applying || selected.size === 0}
+              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium disabled:opacity-50">
+              <Save className="h-4 w-4" />
+              {applying ? 'Applying...' : `Apply to ${selected.size} Employee${selected.size !== 1 ? 's' : ''}`}
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Main Page ─────────────────────────────────────────────────────────────────
 
 type Tab = 'requests' | 'approval' | 'balances';
@@ -598,11 +740,12 @@ type Tab = 'requests' | 'approval' | 'balances';
 function LeavesPageContent() {
   const { user, canDo } = useAuth();
   const role = user?.role || '';
+  const roleKey = role.toLowerCase().replace(/[\s-]+/g, '_');
   // isAdmin: explicit admin/hr_manager role, OR accessType='full' (Application Admin)
-  const isAdmin       = role === 'admin' || role === 'hr_manager' || user?.accessType === 'full';
+  const isAdmin       = roleKey === 'admin' || roleKey === 'hr_manager' || user?.accessType === 'full';
   // isAppAdmin: strictly Application Admin (accessType='full') — for bulk operations
   const isAppAdmin    = user?.accessType === 'full';
-  const isApprover    = role === 'approver' || role === 'branch_approver';
+  const isApprover    = roleKey === 'approver' || roleKey === 'branch_approver';
   const canApproveAny = isAdmin || isApprover;
   // ownEmployeeId: the employee record linked to this user account (all roles)
   const ownEmployeeId    = user?.employeeId || '';
@@ -621,11 +764,12 @@ function LeavesPageContent() {
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [showSetBalances, setShowSetBalances] = useState(false);
+  const [showSetSpecificBalances, setShowSetSpecificBalances] = useState(false);
   const [statusMsg, setStatusMsg] = useState('');
   const [actionError, setActionError] = useState('');
   const [rejectTarget, setRejectTarget] = useState<string | null>(null);
 
-  const canCreate = canDo('leaves', 'create');
+  const canCreate = canDo('leaves', 'create') || isApprover;
   const year = new Date().getFullYear();
 
   // ── Loaders ──────────────────────────────────────────────────────────────────
@@ -668,8 +812,8 @@ function LeavesPageContent() {
   useEffect(() => { loadBalances(); }, [loadBalances]);
 
   useEffect(() => {
-    if (isAdmin) employeeService.getAllEmployees().then(setEmployees).catch(() => {});
-  }, [isAdmin]);
+    if (isAdmin || isApprover) employeeService.getAllEmployees().then(setEmployees).catch(() => {});
+  }, [isAdmin, isApprover]);
 
   useEffect(() => {
     if (ownEmployeeId) {
@@ -707,6 +851,14 @@ function LeavesPageContent() {
     try { await leavesService.remove(id); flashMsg('Request cancelled.'); loadRequests();
     } catch (e: any) { setActionError(e.message); }
   }
+
+  // For branch_approver: filter the employee list to their own branch only
+  const formEmployees = useMemo(() => {
+    if (roleKey === 'branch_approver' && ownEmployeeBranch) {
+      return employees.filter((e) => e.branch === ownEmployeeBranch);
+    }
+    return employees;
+  }, [employees, roleKey, ownEmployeeBranch]);
 
   // ── Tab bar ───────────────────────────────────────────────────────────────────
 
@@ -789,7 +941,7 @@ function LeavesPageContent() {
         <div>
           <div className="mb-4 flex items-center gap-2 text-sm text-slate-600 bg-amber-50 border border-amber-200 rounded-lg px-4 py-2.5">
             <ShieldCheck className="h-4 w-4 text-amber-600 shrink-0" />
-            {role === 'branch_approver'
+            {roleKey === 'branch_approver'
               ? 'Showing pending leaves for employees in your branch only.'
               : 'Showing all pending leave requests awaiting approval.'}
           </div>
@@ -818,12 +970,20 @@ function LeavesPageContent() {
                 <div className="flex items-center gap-3">
                   <span className="text-xs text-slate-400">{balances.length} record(s)</span>
                   {isAppAdmin && (
-                    <button
-                      onClick={() => setShowSetBalances(true)}
-                      className="flex items-center gap-2 px-3 py-1.5 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 text-xs font-medium">
-                      <Settings className="h-3.5 w-3.5" />
-                      Set Leave Balance for Year
-                    </button>
+                    <>
+                      <button
+                        onClick={() => setShowSetSpecificBalances(true)}
+                        className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-xs font-medium">
+                        <User className="h-3.5 w-3.5" />
+                        Set for Selected Employees
+                      </button>
+                      <button
+                        onClick={() => setShowSetBalances(true)}
+                        className="flex items-center gap-2 px-3 py-1.5 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 text-xs font-medium">
+                        <Settings className="h-3.5 w-3.5" />
+                        Set for All Employees
+                      </button>
+                    </>
                   )}
                 </div>
               </div>
@@ -843,7 +1003,7 @@ function LeavesPageContent() {
             <>
               <div className="mb-4 flex items-center gap-2 text-sm text-slate-600 bg-blue-50 border border-blue-200 rounded-lg px-4 py-2.5">
                 <ShieldCheck className="h-4 w-4 text-blue-600 shrink-0" />
-                {role === 'branch_approver'
+                {roleKey === 'branch_approver'
                   ? `Showing leave balances for all employees in your branch — year ${year}.`
                   : `Showing leave balances for all employees in your department — year ${year}.`}
                 <span className="ml-auto text-xs text-slate-400">{balances.length} record(s)</span>
@@ -852,7 +1012,7 @@ function LeavesPageContent() {
                 <div className="flex flex-col items-center justify-center py-16 text-slate-400 border border-dashed border-slate-200 rounded-xl bg-slate-50">
                   <BarChart2 className="h-10 w-10 mb-3 opacity-40" />
                   <p className="font-medium">No balance records found</p>
-                  <p className="text-xs mt-1">No employees in your {role === 'branch_approver' ? 'branch' : 'department'} have balance records yet.</p>
+                  <p className="text-xs mt-1">No employees in your {roleKey === 'branch_approver' ? 'branch' : 'department'} have balance records yet.</p>
                 </div>
               ) : (
                 balances.map((b) => (
@@ -908,6 +1068,14 @@ function LeavesPageContent() {
           onRefresh={loadBalances}
         />
       )}
+      {showSetSpecificBalances && isAppAdmin && (
+        <SetSpecificBalancesModal
+          employees={employees}
+          year={year}
+          onClose={() => setShowSetSpecificBalances(false)}
+          onRefresh={loadBalances}
+        />
+      )}
       {showForm && (
         <LeaveForm
           onClose={() => setShowForm(false)}
@@ -915,7 +1083,7 @@ function LeavesPageContent() {
           ownEmployeeId={isOwnScope ? ownEmployeeId : undefined}
           ownEmployeeName={isOwnScope ? ownEmployeeName : undefined}
           ownEmployeeBranch={isOwnScope ? ownEmployeeBranch : undefined}
-          employees={employees}
+          employees={formEmployees}
         />
       )}
       {rejectTarget && (

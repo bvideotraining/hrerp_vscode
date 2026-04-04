@@ -4,9 +4,8 @@ import { useState, useEffect, useCallback } from 'react';
 import { settingsService, Role } from '@/lib/services/settings.service';
 import { organizationService, Branch, Department, JobTitle } from '@/lib/services/organization.service';
 import {
-  Plus, Pencil, Trash2, X, Lock, Unlock, ShieldCheck, LayoutDashboard,
+  Plus, Pencil, Trash2, X, Lock, Unlock, ShieldCheck,
 } from 'lucide-react';
-import DashboardBuilderSection from './dashboard-builder-section';
 
 // All available modules for permissions
 const MODULES = [
@@ -63,7 +62,6 @@ export default function RolesSection() {
   const [form, setForm] = useState<Omit<Role, 'id'>>(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState<Role | null>(null);
-  const [dashboardRole, setDashboardRole] = useState<Role | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -229,29 +227,16 @@ export default function RolesSection() {
                     {r.description && <p className="text-xs text-slate-500">{r.description}</p>}
                   </div>
                 </div>
-                <div className="flex items-center gap-1 flex-shrink-0">
-                  {!r.isBuiltIn && (
-                    <>
-                      <button onClick={() => openEdit(r)} className="p-1.5 rounded hover:bg-slate-100 transition-colors">
-                        <Pencil className="h-4 w-4 text-slate-500" />
-                      </button>
-                      <button onClick={() => setDeleteConfirm(r)} className="p-1.5 rounded hover:bg-red-100 transition-colors">
-                        <Trash2 className="h-4 w-4 text-red-400" />
-                      </button>
-                    </>
-                  )}
-                  <button
-                    onClick={() => setDashboardRole((prev) => (prev?.id === r.id ? null : r))}
-                    title="Configure Dashboard"
-                    className={`p-1.5 rounded transition-colors ${
-                      dashboardRole?.id === r.id
-                        ? 'bg-indigo-100 text-indigo-600'
-                        : 'hover:bg-indigo-50 text-indigo-400 hover:text-indigo-600'
-                    }`}
-                  >
-                    <LayoutDashboard className="h-4 w-4" />
-                  </button>
-                </div>
+                {!r.isBuiltIn && (
+                  <div className="flex items-center gap-1 flex-shrink-0">
+                    <button onClick={() => openEdit(r)} className="p-1.5 rounded hover:bg-slate-100 transition-colors">
+                      <Pencil className="h-4 w-4 text-slate-500" />
+                    </button>
+                    <button onClick={() => setDeleteConfirm(r)} className="p-1.5 rounded hover:bg-red-100 transition-colors">
+                      <Trash2 className="h-4 w-4 text-red-400" />
+                    </button>
+                  </div>
+                )}
               </div>
               <div className="flex items-center gap-2 flex-wrap">
                 <AccessBadge type={r.accessType} />
@@ -282,14 +267,6 @@ export default function RolesSection() {
             </div>
           )}
         </div>
-      )}
-
-      {/* Dashboard Builder Panel */}
-      {dashboardRole && (
-        <DashboardBuilderSection
-          role={dashboardRole}
-          onClose={() => setDashboardRole(null)}
-        />
       )}
 
       {/* Modal */}

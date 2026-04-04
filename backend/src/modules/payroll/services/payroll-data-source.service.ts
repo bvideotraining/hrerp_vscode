@@ -19,10 +19,13 @@ export interface PayrollSourceData {
 
   // From salary_config
   basicSalary: number;
-  housingAllowance: number;
+  saturdayShiftAllowance: number;
+  dutyAllowance: number;
+  pottyTrainingAllowance: number;
+  afterSchoolAllowance: number;
   transportationAllowance: number;
-  mealAllowance: number;
-  otherAllowances: number;
+  extraBonusAllowance: number;
+  otherBonusAllowance: number;
   totalAllowances: number;
 
   // From salary_increases (cumulatively effective up to payrollMonth)
@@ -30,6 +33,7 @@ export interface PayrollSourceData {
 
   // From bonuses collection for the payroll month
   bonuses: number;
+  bonusNotes: string;
 
   // From attendance within the payroll month
   lateMinutes: number;
@@ -136,25 +140,31 @@ export class PayrollDataSourceService {
     // ─── Map itemized allowances to payroll calculation fields ────────────
     // Salary config now stores allowances as a [{name,amount,source}] array.
     // We map them to the named fields expected by PayrollCalculationService.
-    // Un-matched items are summed into otherAllowances.
-    let housingAllowance = 0;
+    let saturdayShiftAllowance = 0;
+    let dutyAllowance = 0;
+    let pottyTrainingAllowance = 0;
+    let afterSchoolAllowance = 0;
     let transportationAllowance = 0;
-    let mealAllowance = 0;
-    let otherAllowances = 0;
+    let extraBonusAllowance = 0;
+    let otherBonusAllowance = 0;
 
     if (cfg?.allowances && Array.isArray(cfg.allowances)) {
       for (const item of cfg.allowances as any[]) {
         const name = (item.name || '').toLowerCase();
         const amount = item.amount ?? 0;
-        if (name.includes('housing')) housingAllowance += amount;
+        if (name.includes('saturday')) saturdayShiftAllowance += amount;
+        else if (name.includes('duty')) dutyAllowance += amount;
+        else if (name.includes('potty')) pottyTrainingAllowance += amount;
+        else if (name.includes('after school')) afterSchoolAllowance += amount;
         else if (name.includes('transport')) transportationAllowance += amount;
-        else if (name.includes('meal') || name.includes('food')) mealAllowance += amount;
-        else otherAllowances += amount;
+        else if (name.includes('extra')) extraBonusAllowance += amount;
+        else otherBonusAllowance += amount;
       }
     }
 
     const totalAllowances =
-      housingAllowance + transportationAllowance + mealAllowance + otherAllowances;
+      saturdayShiftAllowance + dutyAllowance + pottyTrainingAllowance +
+      afterSchoolAllowance + transportationAllowance + extraBonusAllowance + otherBonusAllowance;
 
     // ─── Map itemized deductions to named deduction fields ─────────────────
     // Social insurance and medical insurance may come from salary config deductions
@@ -181,13 +191,16 @@ export class PayrollDataSourceService {
       department: emp?.department ?? '',
       branch: emp?.branch ?? '',
       basicSalary,
-      housingAllowance,
+      saturdayShiftAllowance,
+      dutyAllowance,
+      pottyTrainingAllowance,
+      afterSchoolAllowance,
       transportationAllowance,
-      mealAllowance,
-      otherAllowances,
+      extraBonusAllowance,
+      otherBonusAllowance,
       totalAllowances,
       increaseAmount,
-      bonuses,
+      bonuses: (bonuses as any).total ?? bonuses,
       lateMinutes: attendance.lateMinutes,
       attendanceDeductionDays,
       attendanceAbsenceDays,
@@ -195,6 +208,7 @@ export class PayrollDataSourceService {
       socialInsurance: resolvedSocialInsurance,
       medicalInsurance: resolvedMedicalInsurance,
       cashAdvance: overrideCashAdvance ?? scheduledCashAdvance,
+      bonusNotes: (bonuses as any).__notes ?? '',
     };
   }
 
@@ -205,11 +219,12 @@ export class PayrollDataSourceService {
     return snap.exists ? { id: snap.id, ...snap.data() } : null;
   }
 
-  private async fetchBonuses(employeeId: string, payrollMonth: string): Promise<number> {
+  private async fetchBonuses(employeeId: string, payrollMonth: string): Promise<{ total: number; __notes: string }> {
     const docId = `${employeeId}_${payrollMonth}`;
     const doc = await this.db.collection('bonuses').doc(docId).get();
-    if (!doc.exists) return 0;
-    return (doc.data() as any)?.total ?? 0;
+    if (!doc.exists) return { total: 0, __notes: '' };
+    const data = doc.data() as any;
+    return { total: data?.total ?? 0, __notes: data?.notes ?? '' };
   }
 
   /**
@@ -408,19 +423,19 @@ export class PayrollDataSourceService {
 
     if (!rule) return 0;
 
-    const freeMinutes: number = rule.freeMinutes ?? 0;
     const schedule: Array<{ upToMinutes: number; days: number }> =
       rule.deductionSchedule ?? [];
+    if (schedule.length === 0) return 0;
 
-    const netMinutes = Math.max(0, totalLateMinutes - freeMinutes);
-    if (netMinutes <= 0 || schedule.length === 0) return 0;
-
-    // Sort ascending and find the first bracket that covers netMinutes
+    // Apply the schedule directly to totalLateMinutes.
+    // freeMinutes is already encoded as the first bracket (days = 0) in the schedule,
+    // so subtracting it here would double-apply the free window and produce 0 days
+    // for employees whose total late time falls in the 61–120 minute range.
     const sorted = [...schedule].sort((a, b) => a.upToMinutes - b.upToMinutes);
     for (const bracket of sorted) {
-      if (netMinutes <= bracket.upToMinutes) return bracket.days;
+      if (totalLateMinutes <= bracket.upToMinutes) return bracket.days;
     }
-    // netMinutes exceeds all brackets → use the last (highest) bracket
+    // totalLateMinutes exceeds all brackets → use the last (highest) bracket
     return sorted[sorted.length - 1].days;
   }
 

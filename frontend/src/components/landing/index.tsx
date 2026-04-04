@@ -8,7 +8,7 @@ export default function LandingPage() {
   return (
     <main>
       <Header />
-      <Hero onGetStarted={() => {}} />
+      <Hero />
       <FeaturesSection />
       <ModulesShowcase />
       <Footer />

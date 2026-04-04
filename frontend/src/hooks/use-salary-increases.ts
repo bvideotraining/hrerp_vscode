@@ -221,6 +221,7 @@ export function useSalaryIncreases() {
       basicSalary: parseFloat(form.basicSalary) || undefined,
       grossSalary: parseFloat(form.grossSalary) || undefined,
       increaseAmount: parseFloat(form.increaseAmount) || 0,
+      effectiveDate: `${form.applyMonth}-01`,
       applyMonth: form.applyMonth,
       previousIncreaseDate: form.previousIncreaseDate || undefined,
       nextIncreaseMonth:

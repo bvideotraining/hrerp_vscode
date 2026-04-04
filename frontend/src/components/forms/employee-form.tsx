@@ -10,7 +10,7 @@ import { Upload, Plus, Trash2, AlertCircle, Eye, Pencil, X, FileText, Download, 
 
 interface EmployeeFormProps {
   initialData?: Employee;
-  onSubmit: (data: Partial<Employee>) => void;
+  onSubmit: (data: Partial<Employee>) => void | Promise<void>;
   onCancel: () => void;
   isLoading?: boolean;
 }
@@ -67,7 +67,7 @@ export function EmployeeForm({ initialData, onSubmit, onCancel, isLoading }: Emp
       organizationService.getJobTitles(),
       settingsService.getConfig(),
     ]).then(([b, d, j, cfg]) => {
-      setBranches(b.map((x) => x.name));
+      setBranches(b.filter((x) => x.isActive !== false).map((x) => x.name));
       setDepartments(d.map((x) => x.name));
       setJobTitles(j.map((x) => x.name));
       // Pre-populate currency with system default if not already set
@@ -210,7 +210,7 @@ export function EmployeeForm({ initialData, onSubmit, onCancel, isLoading }: Emp
         currentSalary: Number(formData.currentSalary) || 0
       });
       setFieldErrors({});
-      onSubmit(validatedData as any);
+      onSubmit(validatedData as Partial<Employee>);
     } catch (error: any) {
       setIsUploading(false);
       console.error('Form validation failed:', error);

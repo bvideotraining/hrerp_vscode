@@ -2,6 +2,8 @@ import {
   IsString,
   IsOptional,
   IsNumber,
+  IsArray,
+  IsIn,
   Min,
   Matches,
 } from 'class-validator';
@@ -101,6 +103,39 @@ export class BatchGeneratePayrollDto {
   @ApiProperty({ description: 'Firestore document ID of the month_range to generate payroll for' })
   @IsString()
   monthRangeId: string;
+}
+
+// ─── Batch generate with filters ────────────────────────────────────────────
+
+export const EMPLOYEE_CATEGORIES = ['WhiteCollar', 'BlueCollar', 'Management', 'PartTime'] as const;
+export type EmployeeCategory = (typeof EMPLOYEE_CATEGORIES)[number];
+
+export class BatchGenerateFilteredDto {
+  @ApiProperty({ enum: ['all', 'branch', 'categories', 'mix'], description: 'Generation scope' })
+  @IsIn(['all', 'branch', 'categories', 'mix'])
+  mode: 'all' | 'branch' | 'categories' | 'mix';
+
+  @ApiProperty({ description: 'Payroll month in YYYY-MM format', example: '2026-04' })
+  @IsString()
+  @Matches(/^\d{4}-\d{2}$/, { message: 'payrollMonth must be in YYYY-MM format' })
+  payrollMonth: string;
+
+  @ApiPropertyOptional({ type: [String], description: 'Filter by branch names (used when mode is branch or mix)' })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  branches?: string[];
+
+  @ApiPropertyOptional({ type: [String], description: 'Filter by employee categories (used when mode is categories or mix)' })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  categories?: string[];
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  notes?: string;
 }
 
 export interface BatchGenerateResultDto {

@@ -55,18 +55,23 @@ function monthLabel(yyyymm: string): string {
 
 function currentMonthValue(): string {
   const n = new Date();
-  return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}`;
+  // Clamp to minimum Jan 2026
+  const y = Math.max(n.getFullYear(), 2026);
+  const m = y > 2026 ? n.getMonth() + 1 : Math.max(n.getMonth() + 1, 1);
+  return `${y}-${String(m).padStart(2, '0')}`;
 }
 
 function generateMonthOptions(yearsBack = 0, yearsForward = 2) {
   const opts: { value: string; label: string }[] = [];
+  // Always start from January 2026
+  const start = new Date(2026, 0, 1);
   const now = new Date();
-  const start = new Date(now.getFullYear() - yearsBack, now.getMonth(), 1);
-  const total = (yearsBack + yearsForward) * 12 + 1;
-  for (let i = 0; i < total; i++) {
-    const d = new Date(start.getFullYear(), start.getMonth() + i, 1);
+  const end = new Date(Math.max(now.getFullYear(), 2026) + yearsForward, 11, 1);
+  let d = new Date(start);
+  while (d <= end) {
     const value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
     opts.push({ value, label: d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) });
+    d = new Date(d.getFullYear(), d.getMonth() + 1, 1);
   }
   return opts;
 }
@@ -162,8 +167,9 @@ function RequestFormModal({ employees, initial, currentUser, isAdmin, onClose, o
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
-  // Auto-fill employee details for standard employee
+  // Auto-fill employee details
   const selectedEmp = employees.find((e) => e.id === employeeId);
+  const branchValue = initial?.branch ?? selectedEmp?.branch ?? '';
 
   async function handleSubmit() {
     if (!employeeId) { setError('Please select an employee.'); return; }
@@ -183,6 +189,7 @@ function RequestFormModal({ employees, initial, currentUser, isAdmin, onClose, o
       employeeId,
       employeeName: emp?.fullName ?? '',
       employeeCode: emp?.employeeCode ?? '',
+      branch: emp?.branch ?? branchValue ?? '',
       amount: amtNum,
       installmentMonths: instNum,
       repaymentStartMonth,
@@ -245,6 +252,16 @@ function RequestFormModal({ employees, initial, currentUser, isAdmin, onClose, o
               </div>
             </div>
           )}
+
+          {/* Amount */}
+          <div>
+            <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">
+              Branch
+            </label>
+            <div className="px-3 py-2 border border-slate-200 rounded-lg text-sm bg-slate-50 text-slate-700">
+              {branchValue || <span className="text-slate-400 italic">Auto-filled from employee</span>}
+            </div>
+          </div>
 
           {/* Amount */}
           <div>
@@ -446,12 +463,30 @@ function DeleteConfirm({ label, onConfirm, onCancel, busy }: { label: string; on
   );
 }
 
+// ─── Month options for filter (starting Jan 2026) ─────────────────────────────
+
+function generateFilterMonthOptions() {
+  const opts: { value: string; label: string }[] = [];
+  const start = new Date(2026, 0, 1); // January 2026
+  const end = new Date();
+  end.setMonth(end.getMonth() + 24); // 2 years ahead
+  let d = new Date(start);
+  while (d <= end) {
+    const value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    opts.push({ value, label: d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) });
+    d = new Date(d.getFullYear(), d.getMonth() + 1, 1);
+  }
+  return opts;
+}
+
+const FILTER_MONTH_OPTIONS = generateFilterMonthOptions();
+
 // ─── Skeleton row ─────────────────────────────────────────────────────────────
 
 function SkeletonRow() {
   return (
     <tr className="border-b border-slate-100">
-      {Array.from({ length: 8 }).map((_, i) => (
+      {Array.from({ length: 10 }).map((_, i) => (
         <td key={i} className="px-4 py-3">
           <div className="h-4 bg-slate-200 rounded animate-pulse" style={{ width: i === 0 ? '70%' : '55%' }} />
         </td>
@@ -470,6 +505,11 @@ export function CashAdvancesSection() {
   const ca = useCashAdvances();
 
   const [employees, setEmployees] = useState<Employee[]>([]);
+
+  // Filter state
+  const [filterEmployee, setFilterEmployee] = useState('');
+  const [filterBranch, setFilterBranch] = useState('');
+  const [filterMonth, setFilterMonth] = useState('');
 
   // Modal state
   const [showForm, setShowForm] = useState(false);
@@ -512,14 +552,31 @@ export function CashAdvancesSection() {
     return () => document.removeEventListener('mousedown', handler);
   }, [exportOpen]);
 
-  const filtered = ca.search
-    ? ca.records.filter(
-        (r) =>
-          r.employeeName.toLowerCase().includes(ca.search.toLowerCase()) ||
-          r.employeeCode.toLowerCase().includes(ca.search.toLowerCase()) ||
-          r.status.includes(ca.search.toLowerCase()),
-      )
-    : ca.records;
+  // Derive unique branches from loaded records
+  const branchOptions = Array.from(new Set(ca.records.map((r) => r.branch).filter(Boolean))).sort();
+
+  const filtered = ca.records.filter((r) => {
+    if (ca.search) {
+      const q = ca.search.toLowerCase();
+      const matchSearch =
+        r.employeeName.toLowerCase().includes(q) ||
+        r.employeeCode.toLowerCase().includes(q) ||
+        r.status.includes(q);
+      if (!matchSearch) return false;
+    }
+    if (filterEmployee && r.employeeId !== filterEmployee) return false;
+    if (filterBranch && r.branch !== filterBranch) return false;
+    if (filterMonth && r.repaymentStartMonth !== filterMonth) return false;
+    return true;
+  });
+
+  const hasActiveFilters = filterEmployee || filterBranch || filterMonth;
+
+  function clearFilters() {
+    setFilterEmployee('');
+    setFilterBranch('');
+    setFilterMonth('');
+  }
 
   async function handleFormSubmit(payload: CreateCashAdvancePayload) {
     if (editTarget) {
@@ -578,7 +635,7 @@ export function CashAdvancesSection() {
 
       {/* Main card */}
       <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
-        {/* Card header */}
+        {/* Card header — top row: title, export, search, request button */}
         <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between gap-4 flex-wrap">
           <div className="flex items-center gap-3">
             <h3 className="text-sm font-semibold text-slate-900">Cash in Advance Requests</h3>
@@ -622,33 +679,87 @@ export function CashAdvancesSection() {
             </div>
 
             {/* Search */}
-            <div className="relative w-56">
+            <div className="relative w-48">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
               <input
                 type="text"
-                placeholder="Search requests…"
+                placeholder="Search…"
                 value={ca.search}
                 onChange={(e) => ca.setSearch(e.target.value)}
                 className="w-full pl-9 pr-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
               />
             </div>
 
-            {/* Add Request — admins and standard employees can request */}
+            {/* Request button — admins and standard employees can request */}
             {!isFinanceManager(user) && (
               <button
                 onClick={() => { setEditTarget(null); setShowForm(true); }}
                 className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-lg hover:bg-slate-800 text-sm font-semibold transition-colors"
               >
                 <Plus className="h-4 w-4" />
-                Add Request
+                Request
               </button>
             )}
           </div>
         </div>
 
+        {/* Filter row */}
+        <div className="px-5 py-3 bg-slate-50 border-b border-slate-200 flex items-center gap-3 flex-wrap">
+          <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide shrink-0">Filter by:</span>
+
+          {/* Employee Name filter */}
+          <select
+            value={filterEmployee}
+            onChange={(e) => setFilterEmployee(e.target.value)}
+            className="px-3 py-1.5 border border-slate-200 rounded-lg text-sm bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-400 min-w-[160px]"
+          >
+            <option value="">All Employees</option>
+            {employees.map((emp) => (
+              <option key={emp.id} value={emp.id}>
+                {emp.fullName} — {emp.employeeCode}
+              </option>
+            ))}
+          </select>
+
+          {/* Branch filter */}
+          <select
+            value={filterBranch}
+            onChange={(e) => setFilterBranch(e.target.value)}
+            className="px-3 py-1.5 border border-slate-200 rounded-lg text-sm bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-400 min-w-[140px]"
+          >
+            <option value="">All Branches</option>
+            {branchOptions.map((b) => (
+              <option key={b} value={b}>{b}</option>
+            ))}
+          </select>
+
+          {/* Month filter */}
+          <select
+            value={filterMonth}
+            onChange={(e) => setFilterMonth(e.target.value)}
+            className="px-3 py-1.5 border border-slate-200 rounded-lg text-sm bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-400 min-w-[160px]"
+          >
+            <option value="">All Months</option>
+            {FILTER_MONTH_OPTIONS.map((m) => (
+              <option key={m.value} value={m.value}>{m.label}</option>
+            ))}
+          </select>
+
+          {/* Clear filters */}
+          {hasActiveFilters && (
+            <button
+              onClick={clearFilters}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-slate-500 hover:text-slate-800 border border-slate-200 rounded-lg bg-white hover:bg-slate-50 transition-colors"
+            >
+              <X className="h-3.5 w-3.5" />
+              Clear
+            </button>
+          )}
+        </div>
+
         {/* Table */}
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[900px]">
+          <table className="w-full min-w-[1000px]">
             <thead className="bg-slate-50 border-b border-slate-200">
               <tr>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">
@@ -656,6 +767,9 @@ export function CashAdvancesSection() {
                 </th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">
                   Employee Name
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">
+                  Branch
                 </th>
                 <th className="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">
                   Amount
@@ -685,7 +799,7 @@ export function CashAdvancesSection() {
                 Array.from({ length: 4 }).map((_, i) => <SkeletonRow key={i} />)
               ) : filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="px-4 py-16 text-center">
+                  <td colSpan={10} className="px-4 py-16 text-center">
                     <div className="flex flex-col items-center gap-3 text-slate-400">
                       <Banknote className="h-10 w-10 text-slate-200" />
                       <p className="font-medium text-sm">No cash advance requests found</p>
@@ -705,6 +819,7 @@ export function CashAdvancesSection() {
                   <tr key={record.id} className="border-b border-slate-100 hover:bg-slate-50 transition-colors">
                     <td className="px-4 py-3 text-sm font-mono text-slate-500">{record.employeeCode}</td>
                     <td className="px-4 py-3 text-sm font-medium text-slate-900 whitespace-nowrap">{record.employeeName}</td>
+                    <td className="px-4 py-3 text-sm text-slate-600 whitespace-nowrap">{record.branch || '—'}</td>
                     <td className="px-4 py-3 text-sm text-right text-slate-700 whitespace-nowrap">
                       {fmtAmt(record.amount)}
                     </td>

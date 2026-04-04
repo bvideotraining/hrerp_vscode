@@ -31,6 +31,7 @@ export interface Branch {
   id?: string;
   code: string;
   name: string;
+  isActive?: boolean;
 }
 
 export interface Department {
@@ -72,16 +73,6 @@ export interface AttendanceRule {
 
 // ─── Service ──────────────────────────────────────────────────────────────────
 
-// Simple in-memory TTL cache (30 s) for read-heavy org lookups
-const _orgCache = new Map<string, { data: unknown; ts: number }>();
-function orgCached<T>(key: string, fn: () => Promise<T>): Promise<T> {
-  const TTL = 30_000;
-  const hit = _orgCache.get(key);
-  if (hit && Date.now() - hit.ts < TTL) return Promise.resolve(hit.data as T);
-  return fn().then((d) => { _orgCache.set(key, { data: d, ts: Date.now() }); return d; });
-}
-function orgInvalidate(...keys: string[]) { keys.forEach((k) => _orgCache.delete(k)); }
-
 class OrganizationService {
   // Branding
   getBranding(): Promise<Branding> {
@@ -96,65 +87,62 @@ class OrganizationService {
 
   // Branches
   getBranches(): Promise<Branch[]> {
-    return orgCached('branches', () => apiFetch<Branch[]>('/api/organization/branches'));
+    return apiFetch<Branch[]>('/api/organization/branches');
   }
   createBranch(data: Omit<Branch, 'id'>): Promise<Branch> {
     return apiFetch<Branch>('/api/organization/branches', {
       method: 'POST',
       body: JSON.stringify(data),
-    }).then((r) => { orgInvalidate('branches'); return r; });
+    });
   }
   updateBranch(id: string, data: Omit<Branch, 'id'>): Promise<Branch> {
     return apiFetch<Branch>(`/api/organization/branches/${id}`, {
       method: 'PUT',
       body: JSON.stringify(data),
-    }).then((r) => { orgInvalidate('branches'); return r; });
+    });
   }
   deleteBranch(id: string): Promise<void> {
-    return apiFetch<void>(`/api/organization/branches/${id}`, { method: 'DELETE' })
-      .then((r) => { orgInvalidate('branches'); return r; });
+    return apiFetch<void>(`/api/organization/branches/${id}`, { method: 'DELETE' });
   }
 
   // Departments
   getDepartments(): Promise<Department[]> {
-    return orgCached('departments', () => apiFetch<Department[]>('/api/organization/departments'));
+    return apiFetch<Department[]>('/api/organization/departments');
   }
   createDepartment(data: Omit<Department, 'id'>): Promise<Department> {
     return apiFetch<Department>('/api/organization/departments', {
       method: 'POST',
       body: JSON.stringify(data),
-    }).then((r) => { orgInvalidate('departments'); return r; });
+    });
   }
   updateDepartment(id: string, data: Omit<Department, 'id'>): Promise<Department> {
     return apiFetch<Department>(`/api/organization/departments/${id}`, {
       method: 'PUT',
       body: JSON.stringify(data),
-    }).then((r) => { orgInvalidate('departments'); return r; });
+    });
   }
   deleteDepartment(id: string): Promise<void> {
-    return apiFetch<void>(`/api/organization/departments/${id}`, { method: 'DELETE' })
-      .then((r) => { orgInvalidate('departments'); return r; });
+    return apiFetch<void>(`/api/organization/departments/${id}`, { method: 'DELETE' });
   }
 
   // Job Titles
   getJobTitles(): Promise<JobTitle[]> {
-    return orgCached('jobTitles', () => apiFetch<JobTitle[]>('/api/organization/job-titles'));
+    return apiFetch<JobTitle[]>('/api/organization/job-titles');
   }
   createJobTitle(data: Omit<JobTitle, 'id'>): Promise<JobTitle> {
     return apiFetch<JobTitle>('/api/organization/job-titles', {
       method: 'POST',
       body: JSON.stringify(data),
-    }).then((r) => { orgInvalidate('jobTitles'); return r; });
+    });
   }
   updateJobTitle(id: string, data: Omit<JobTitle, 'id'>): Promise<JobTitle> {
     return apiFetch<JobTitle>(`/api/organization/job-titles/${id}`, {
       method: 'PUT',
       body: JSON.stringify(data),
-    }).then((r) => { orgInvalidate('jobTitles'); return r; });
+    });
   }
   deleteJobTitle(id: string): Promise<void> {
-    return apiFetch<void>(`/api/organization/job-titles/${id}`, { method: 'DELETE' })
-      .then((r) => { orgInvalidate('jobTitles'); return r; });
+    return apiFetch<void>(`/api/organization/job-titles/${id}`, { method: 'DELETE' });
   }
 
   // Month Ranges

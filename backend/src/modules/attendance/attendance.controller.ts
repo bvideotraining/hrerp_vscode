@@ -40,8 +40,13 @@ export class AttendanceController {
 
   @Get('export')
   @ApiOperation({ summary: 'Get all records matching filters for file export (no pagination)' })
-  async export(@Query() filters: AttendanceFilterDto) {
-    return this.attendanceService.getExportData(filters);
+  async export(@Query() filters: AttendanceFilterDto, @Request() req: any) {
+    return this.attendanceService.getExportData(filters, {
+      userId: req.user?.sub || req.user?.id || '',
+      role: req.user?.role || '',
+      accessType: req.user?.accessType || '',
+      employeeId: req.user?.employeeId || '',
+    });
   }
 
   @Post('bulk-import')
@@ -56,8 +61,15 @@ export class AttendanceController {
 
   @Get()
   @ApiOperation({ summary: 'Get attendance records with optional filters + pagination' })
-  async findAll(@Query() filters: AttendanceFilterDto) {
-    return this.attendanceService.findAll(filters);
+  async findAll(@Query() filters: AttendanceFilterDto, @Request() req: any) {
+    const userContext = {
+      userId: req.user?.sub || req.user?.id || '',
+      role: req.user?.role || '',
+      accessType: req.user?.accessType || '',
+      employeeId: req.user?.employeeId || '',
+    };
+    console.log('[AttendanceController] User context for attendance:', userContext);
+    return this.attendanceService.findAll(filters, userContext);
   }
 
   @Get(':id')

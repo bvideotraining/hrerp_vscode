@@ -41,8 +41,13 @@ export class EmployeesController {
 
   @Get()
   @ApiOperation({ summary: 'Get all employees with optional filters' })
-  async findAll(@Query() filters: EmployeeFilterDto) {
-    return this.employeesService.findAll(filters);
+  async findAll(@Query() filters: EmployeeFilterDto, @Request() req: any) {
+    return this.employeesService.findAll(filters, {
+      userId: req.user?.sub || req.user?.id || '',
+      role: req.user?.role || '',
+      accessType: req.user?.accessType || '',
+      employeeId: req.user?.employeeId || '',
+    });
   }
 
   @Get('search/:term')

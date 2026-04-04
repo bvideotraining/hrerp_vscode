@@ -285,7 +285,7 @@ async function exportToExcel(rows: IncreaseRow[], year: string, branch: string) 
     'Next Increase Month': r.nextIncreaseMonth ? monthLabel(r.nextIncreaseMonth) : '—',
     'New Increase Amount (EGP)': r.increaseAmount,
     'New Gross Salary (EGP)': r.newGrossSalary ?? '',
-    'Apply Month': monthLabel(r.applyMonth),
+    'Apply Month': monthLabel(r.applyMonth || ''),
     Reason: r.reason || '',
     Notes: r.notes || '',
   }));
@@ -380,7 +380,7 @@ export function SalaryIncreasesSection() {
         .filter(
           (r) =>
             r.employeeId === emp.id &&
-            r.applyMonth <= (form.applyMonth || currentMonthValue()) &&
+            (r.applyMonth || '') <= (form.applyMonth || currentMonthValue()) &&
             !r._isDraft,
         )
         .reduce((s, r) => s + (r.increaseAmount || 0), 0);
@@ -815,7 +815,7 @@ export function SalaryIncreasesSection() {
                         {row.newGrossSalary != null ? fmtAmt(row.newGrossSalary) : '—'}
                       </td>
                       <td className="px-3 py-3 text-xs text-slate-700 whitespace-nowrap">
-                        {monthLabel(row.applyMonth)}
+                        {monthLabel(row.applyMonth || '')}
                       </td>
                       <td className="px-3 py-3 text-xs text-slate-400 max-w-[140px] truncate">
                         {row.reason || '—'}

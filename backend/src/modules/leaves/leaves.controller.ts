@@ -29,7 +29,10 @@ export class LeavesController {
   @ApiOperation({ summary: 'Create a leave request' })
   async create(@Body() dto: CreateLeaveDto, @Request() req: any) {
     const createdBy = req.user?.sub || req.user?.id || dto.employeeId;
-    return this.leavesService.create(dto, createdBy);
+    const creatorRole = req.user?.role || '';
+    const creatorAccessType = req.user?.accessType || '';
+    const creatorEmployeeId = req.user?.employeeId || '';
+    return this.leavesService.create(dto, createdBy, creatorRole, creatorAccessType, creatorEmployeeId);
   }
 
   @Get()
@@ -43,7 +46,8 @@ export class LeavesController {
     const role = req.user?.role || '';
     const accessType = req.user?.accessType || '';
     const userId = req.user?.sub || req.user?.id || '';
-    return this.leavesService.findAll(employeeId, status, role, userId, accessType);
+    const employeeIdFromToken = req.user?.employeeId || '';
+    return this.leavesService.findAll(employeeId, status, role, userId, accessType, employeeIdFromToken);
   }
 
   @Get(':id')
@@ -78,7 +82,8 @@ export class LeavesController {
     const requesterId = req.user?.sub || req.user?.id || '';
     const requesterRole = req.user?.role || '';
     const accessType = req.user?.accessType || '';
-    return this.leavesService.update(id, dto, requesterId, requesterRole, accessType);
+    const requesterEmployeeId = req.user?.employeeId || '';
+    return this.leavesService.update(id, dto, requesterId, requesterRole, accessType, requesterEmployeeId);
   }
 
   @Delete(':id')

@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { FirebaseService } from '../../config/firebase/firebase.service';
+import { ScopeService } from '../common/scope.service';
 
 export const DEFAULT_ALLOCATIONS: Record<string, number> = {
   annual: 15,
@@ -15,7 +16,10 @@ const BALANCE_TRACKED_TYPES = ['annual', 'casual', 'sick', 'death', 'maternity']
 
 @Injectable()
 export class LeaveBalanceService {
-  constructor(private firebaseService: FirebaseService) {}
+  constructor(
+    private firebaseService: FirebaseService,
+    private scopeService: ScopeService,
+  ) {}
 
   private docId(employeeId: string, year: number) {
     return `${employeeId}_${year}`;
@@ -174,28 +178,13 @@ export class LeaveBalanceService {
   }
 
   /**
-   * Fetch balances scoped to the approver's department (for 'approver' role)
+   * Fetch balances scoped to the user's department (for 'approver' role)
    * or branch (for 'branch_approver' role).
+   * Uses ScopeService to resolve multiple allowed departments/branches from role settings.
    */
-  async getScopedBalances(userId: string, role: string, year?: number) {
-    const db = this.firebaseService.getFirestore();
-    const y = year ?? new Date().getFullYear();
-    const scope = await this.getUserScopeInfo(userId);
-
-    let employeeIds: string[] = [];
-
-    if (role === 'approver' && scope.department) {
-      const snap = await db.collection('employees')
-        .where('department', '==', scope.department)
-        .get();
-      employeeIds = snap.docs.map((d: any) => d.id);
-    } else if (role === 'branch_approver' && scope.branch) {
-      const snap = await db.collection('employees')
-        .where('branch', '==', scope.branch)
-        .get();
-      employeeIds = snap.docs.map((d: any) => d.id);
-    }
-
-    return this.getBalancesByEmployeeIds(employeeIds, y);
+  async getScopedBalances(userId: string, role: string, year?: number, accessType: string = '') {
+    const allowedIds = await this.scopeService.getAllowedEmployeeIds(userId, role, accessType);
+    // allowedIds === null means admin (shouldn't reach here), empty set means no scope configured
+    return this.getBalancesByEmployeeIds(Array.from(allowedIds ?? []), year);
   }
 }

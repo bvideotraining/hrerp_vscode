@@ -1,13 +1,24 @@
 import { Injectable, ConflictException } from '@nestjs/common';
 import { v4 as uuidv4 } from 'uuid';
 import { FirebaseService } from '@config/firebase/firebase.service';
+import { ScopeService } from '@modules/common/scope.service';
 import { CreateEmployeeDto } from './dto/create-employee.dto';
 import { UpdateEmployeeDto } from './dto/update-employee.dto';
 import { EmployeeFilterDto } from './dto/employee-filter.dto';
 
+export interface RequestUser {
+  userId: string;
+  role: string;
+  accessType: string;
+  employeeId?: string;
+}
+
 @Injectable()
 export class EmployeesService {
-  constructor(private firebaseService: FirebaseService) {}
+  constructor(
+    private firebaseService: FirebaseService,
+    private scopeService: ScopeService,
+  ) {}
 
   async create(createEmployeeDto: CreateEmployeeDto, userId: string) {
     const db = this.firebaseService.getFirestore();
@@ -46,8 +57,60 @@ export class EmployeesService {
     };
   }
 
-  async findAll(filters?: EmployeeFilterDto) {
+  async findAll(filters?: EmployeeFilterDto, userContext?: RequestUser) {
     const db = this.firebaseService.getFirestore();
+
+    // Debug: Log userContext
+    console.log('[EmployeesService] userContext:', userContext);
+
+    // Resolve scope when a user context is provided
+    let scopedDepts: Set<string> | null = null;
+    let scopedBranches: Set<string> | null = null;
+    let scopedJobTitles: Set<string> | null = null;
+
+    let allowedIds: Set<string> | null = null;
+    if (userContext) {
+      const scope = await this.scopeService.resolveScope(
+        userContext.userId,
+        userContext.role,
+        userContext.accessType,
+        userContext.employeeId,
+      );
+      // Debug: Log resolved scope
+      console.log('[EmployeesService] resolved scope:', scope);
+
+      // Own-scope users can only see their own employee record
+      if (scope.isOwnScopeOnly) {
+        if (userContext.employeeId) {
+          try {
+            const emp = await this.findById(userContext.employeeId);
+            return emp ? [emp] : [];
+          } catch {
+            return [];
+          }
+        }
+        return [];
+      }
+
+      // Branch approver: get allowed employee IDs (all employees in their branch)
+      if (scope.isBranchApprover && scope.allowedBranches.length > 0) {
+        allowedIds = await this.scopeService.getAllowedEmployeeIds(userContext.userId, userContext.role, userContext.accessType, userContext.employeeId);
+      }
+
+      // Approver: collect allowed dept/branch sets for post-filter
+      if (scope.isApprover && scope.allowedDepartments.length > 0) {
+        scopedDepts = new Set(scope.allowedDepartments);
+        if (scope.allowedBranches.length > 0) {
+          scopedBranches = new Set(scope.allowedBranches);
+        }
+      }
+
+      // Custom job-title-scoped role
+      if (scope.scopeJobTitles && scope.scopeJobTitles.length > 0) {
+        scopedJobTitles = new Set(scope.scopeJobTitles);
+      }
+    }
+
     let query: any = db.collection('employees');
 
     // Apply filters
@@ -74,10 +137,34 @@ export class EmployeesService {
     }
 
     const snapshot = await query.get();
-    return snapshot.docs.map((doc: any) => ({
+    let results = snapshot.docs.map((doc: any) => ({
       id: doc.id,
       ...doc.data(),
     }));
+
+    if (allowedIds) {
+      console.log('[EmployeesService] Allowed employee IDs for branch approver:', Array.from(allowedIds));
+      console.log('[EmployeesService] Raw employee list before filtering:', results.map((e: any) => ({ id: e.id, name: e.fullName, branch: e.branch, department: e.department })));
+    }
+
+    // Branch approver: filter by allowed employee IDs
+    if (allowedIds) {
+      results = results.filter((e: any) => allowedIds!.has(e.id));
+      console.log('[EmployeesService] Filtered employee list for branch approver:', results.map((e: any) => ({ id: e.id, name: e.fullName, branch: e.branch, department: e.department })));
+    }
+    // Post-filter for approver department / branch scope
+    if (scopedDepts) {
+      results = results.filter((e: any) => scopedDepts!.has(e.department));
+    }
+    if (scopedBranches) {
+      results = results.filter((e: any) => scopedBranches!.has(e.branch));
+    }
+    // Post-filter for custom job-title scope
+    if (scopedJobTitles) {
+      results = results.filter((e: any) => scopedJobTitles!.has(e.jobTitle));
+    }
+
+    return results;
   }
 
   async findById(id: string) {

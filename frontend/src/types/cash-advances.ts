@@ -14,6 +14,7 @@ export interface CashAdvance {
   employeeId: string;
   employeeName: string;
   employeeCode: string;
+  branch: string;
 
   /** Total requested amount */
   amount: number;
@@ -54,6 +55,7 @@ export interface CreateCashAdvancePayload {
   employeeId: string;
   employeeName: string;
   employeeCode: string;
+  branch: string;
   amount: number;
   installmentMonths: number;
   repaymentStartMonth: string;

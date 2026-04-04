@@ -20,6 +20,7 @@ import {
   UpdatePayrollDto,
   PayrollFilterDto,
   BatchGeneratePayrollDto,
+  BatchGenerateFilteredDto,
 } from './dto/payroll.dto';
 
 function isAppAdmin(user: any): boolean {
@@ -69,6 +70,15 @@ export class PayrollController {
   generateBatch(@Body() dto: BatchGeneratePayrollDto, @Req() req: any) {
     if (!isAppAdmin(req.user)) throw new ForbiddenException('Insufficient permissions');
     return this.service.generateBatch(dto);
+  }
+
+  /** Batch-generate payroll filtered by branch/category (admin only) */
+  @Post('generate-batch-filtered')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Batch-generate payroll filtered by mode/branch/category (admin only)' })
+  generateBatchFiltered(@Body() dto: BatchGenerateFilteredDto, @Req() req: any) {
+    if (!isAppAdmin(req.user)) throw new ForbiddenException('Insufficient permissions');
+    return this.service.generateBatchFiltered(dto);
   }
 
   /** Recalculate draft payroll (admin only) */

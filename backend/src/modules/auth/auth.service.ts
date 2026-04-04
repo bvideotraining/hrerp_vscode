@@ -102,6 +102,9 @@ export class AuthService {
       // ── Role lookup ────────────────────────────────────────
       let permissions: any[] = [];
       let scopeType: string[] = [];
+      let scopeDepartments: string[] = [];
+      let scopeBranches: string[] = [];
+      let scopeJobTitles: string[] = [];
       let roleId = userData.roleId || userData.role || '';
       let accessType = 'custom'; // safe default; overridden if role is found
 
@@ -141,6 +144,9 @@ export class AuthService {
         permissions = roleDoc.permissions || [];
         accessType = roleDoc.accessType || 'custom';
         scopeType = roleDoc.scopeType || [];
+        scopeDepartments = roleDoc.scopeDepartments || [];
+        scopeBranches = roleDoc.scopeBranches || [];
+        scopeJobTitles = roleDoc.scopeJobTitles || [];
       } else {
         console.warn(`[Auth] Role NOT found. roleId="${userData.roleId}", roleName="${userData.roleName}", role="${userData.role}" — no permissions granted`);
       }
@@ -183,6 +189,9 @@ export class AuthService {
         accessType,
         permissions,
         scopeType,
+        scopeDepartments,
+        scopeBranches,
+        scopeJobTitles,
         employeeId,
         employeeCode,
         accessToken,
@@ -235,6 +244,9 @@ export class AuthService {
     // ── Role lookup ────────────────────────────────────────
     let permissions: any[] = [];
     let scopeType: string[] = [];
+    let scopeDepartments: string[] = [];
+    let scopeBranches: string[] = [];
+    let scopeJobTitles: string[] = [];
     let roleId = userData.roleId || userData.role || '';
     let accessType = 'custom';
     const rolesRef = db.collection('roles');
@@ -257,6 +269,9 @@ export class AuthService {
       permissions = roleDoc.permissions || [];
       accessType = roleDoc.accessType || 'custom';
       scopeType = roleDoc.scopeType || [];
+      scopeDepartments = roleDoc.scopeDepartments || [];
+      scopeBranches = roleDoc.scopeBranches || [];
+      scopeJobTitles = roleDoc.scopeJobTitles || [];
     }
 
     // ── Employee record ────────────────────────────────────
@@ -279,6 +294,9 @@ export class AuthService {
       accessType,
       permissions,
       scopeType,
+      scopeDepartments,
+      scopeBranches,
+      scopeJobTitles,
       employeeId,
       employeeCode,
     };

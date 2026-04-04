@@ -5,6 +5,7 @@ import {
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { LeaveBalanceService } from './leave-balance.service';
+import { ScopeService } from '../common/scope.service';
 import { SetLeaveBalanceDto, InitBalanceDto } from './dto/leave-balance.dto';
 
 const ADMIN_ROLES = ['admin', 'hr_manager'];
@@ -19,12 +20,15 @@ function isAdmin(user: any): boolean {
 @UseGuards(JwtAuthGuard)
 @Controller('api/leave-balances')
 export class LeaveBalanceController {
-  constructor(private leaveBalanceService: LeaveBalanceService) {}
+  constructor(
+    private leaveBalanceService: LeaveBalanceService,
+    private scopeService: ScopeService,
+  ) {}
 
   /**
    * GET /api/leave-balances?year=2026
    * - admin/hr_manager → all employees
-   * - approver        → employees in same department (read-only)
+   * - approver        → employees in configured academic departments (role settings)
    * - branch_approver → employees in same branch (read-only)
    */
   @Get()
@@ -38,8 +42,8 @@ export class LeaveBalanceController {
       return this.leaveBalanceService.getAllBalances(year ? Number(year) : undefined);
     }
 
-    if (APPROVER_ROLES.includes(role)) {
-      return this.leaveBalanceService.getScopedBalances(userId, role, year ? Number(year) : undefined);
+    if (APPROVER_ROLES.includes(role) || req.user?.accessType === 'custom') {
+      return this.leaveBalanceService.getScopedBalances(userId, role, year ? Number(year) : undefined, req.user?.accessType || '');
     }
 
     throw new ForbiddenException('Access denied');
@@ -62,10 +66,19 @@ export class LeaveBalanceController {
       return this.leaveBalanceService.getBalance(employeeId, year ? Number(year) : undefined);
     }
 
-    // approvers can view any within their scope — but also need to be able to
-    // view their own record regardless; permission check is loose here (own record always allowed)
-    if (APPROVER_ROLES.includes(role) || userId === employeeId) {
+    // Employee may always view their own balance
+    const ownEmployeeId = req.user?.employeeId || '';
+    if (ownEmployeeId && ownEmployeeId === employeeId) {
       return this.leaveBalanceService.getBalance(employeeId, year ? Number(year) : undefined);
+    }
+
+    // Approvers: only allow if employeeId is within their scope
+    if (APPROVER_ROLES.includes(role)) {
+      const allowedIds = await this.scopeService.getAllowedEmployeeIds(userId, role, req.user?.accessType || '');
+      if (allowedIds === null || allowedIds.has(employeeId)) {
+        return this.leaveBalanceService.getBalance(employeeId, year ? Number(year) : undefined);
+      }
+      throw new ForbiddenException('You can only view leave balances for employees in your assigned scope');
     }
 
     throw new ForbiddenException('You can only view your own leave balance');

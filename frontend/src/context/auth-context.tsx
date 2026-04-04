@@ -20,6 +20,8 @@ interface User {
   employeeCode?: string;
   /** Data scope from the role (e.g. ['own']) */
   scopeType?: string[];
+  /** Job title IDs the user is scoped to view */
+  scopeJobTitles?: string[];
   branch?: string;
   department?: string;
   avatar?: string;
@@ -62,6 +64,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             employeeId: profile.employeeId || '',
             employeeCode: profile.employeeCode || '',
             scopeType: profile.scopeType || [],
+            scopeJobTitles: (profile as any).scopeJobTitles || [],
             avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${profile.email}`,
           });
         }
@@ -94,6 +97,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         employeeId: response.employeeId || '',
         employeeCode: response.employeeCode || '',
         scopeType: response.scopeType || [],
+        scopeJobTitles: response.scopeJobTitles || [],
         avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${response.email}`
       };
 
@@ -145,7 +149,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const canAccess = (moduleId: string): boolean => {
     if (!user) return false;
     if (moduleId === 'dashboard') return true;
-    if (user.role === 'admin') return true;
+    const roleKey = (user.role || '').toLowerCase().replace(/[\s-]+/g, '_');
+    if (roleKey === 'admin') return true;
     if (user.accessType === 'full') return true;
     // 'custom' — must have at least 'read' in permissions
     const result = (user.permissions || []).some(
@@ -162,7 +167,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
    */
   const canDo = (moduleId: string, action: 'read' | 'create' | 'edit' | 'delete'): boolean => {
     if (!user) return false;
-    if (user.role === 'admin') return true;
+    const roleKey = (user.role || '').toLowerCase().replace(/[\s-]+/g, '_');
+    if (roleKey === 'admin') return true;
     if (user.accessType === 'full') return true;
     return (user.permissions || []).some(
       (p) => p.moduleId === moduleId && p.actions.includes(action)

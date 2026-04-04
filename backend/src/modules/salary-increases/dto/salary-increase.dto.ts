@@ -98,6 +98,12 @@ export class CreateSalaryIncreaseDto {
   @IsOptional()
   @IsString()
   notes?: string;
+
+  /** Workflow status: 'pending' (default) or 'applied' */
+  @ApiPropertyOptional({ enum: ['pending', 'applied'], default: 'pending' })
+  @IsOptional()
+  @IsString()
+  status?: string;
 }
 
 export class UpdateSalaryIncreaseDto extends PartialType(CreateSalaryIncreaseDto) {}

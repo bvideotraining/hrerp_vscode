@@ -81,6 +81,7 @@ export class SalaryIncreasesService {
     const ref = this.db.collection('salary_increases').doc();
     const data = {
       ...dto,
+      status: dto.status ?? 'pending',
       // Derive effectiveDate for backward compatibility with payroll resolution
       effectiveDate: `${dto.applyMonth}-01`,
       createdAt: new Date().toISOString(),
@@ -88,6 +89,69 @@ export class SalaryIncreasesService {
     };
     await ref.set(data);
     return { id: ref.id, ...data };
+  }
+
+  /**
+   * Apply a scheduled increase:
+   *  1. Sets status → 'applied' on the salary_increase record
+   *  2. Creates or updates the salary_config for employee+applyMonth
+   *     setting its increaseAmount to this increase's increaseAmount
+   */
+  async applyScheduledIncrease(id: string) {
+    const ref = this.db.collection('salary_increases').doc(id);
+    const snap = await ref.get();
+    if (!snap.exists) throw new NotFoundException(`Salary increase '${id}' not found`);
+    const record = { id: snap.id, ...snap.data() } as any;
+
+    // 1. Mark as applied
+    await ref.update({ status: 'applied', updatedAt: new Date().toISOString() });
+
+    // 2. Upsert salary_config for the employee + applyMonth
+    const applyMonth: string = record.applyMonth || (record.effectiveDate ? record.effectiveDate.slice(0, 7) : '');
+    if (applyMonth) {
+      const configDocId = `${record.employeeId}__${applyMonth}`;
+      const configRef = this.db.collection('salary_configs').doc(configDocId);
+      const configSnap = await configRef.get();
+
+      const increaseAmount = Number(record.increaseAmount || 0);
+      const basicSalary = Number(record.basicSalary || 0);
+      const grossSalary = Math.round((basicSalary + increaseAmount) * 100) / 100;
+
+      if (configSnap.exists) {
+        const existing = configSnap.data() as any;
+        const newGross = Math.round(((existing.basicSalary || basicSalary) + increaseAmount) * 100) / 100;
+        const totalSalary = Math.round((newGross + (existing.totalAllowances || 0) - (existing.totalDeductions || 0)) * 100) / 100;
+        await configRef.update({
+          increaseAmount,
+          grossSalary: newGross,
+          totalSalary,
+          updatedAt: new Date().toISOString(),
+        });
+      } else {
+        const totalSalary = Math.round((grossSalary) * 100) / 100;
+        await configRef.set({
+          employeeId: record.employeeId,
+          employeeCode: record.employeeCode || '',
+          employeeName: record.employeeName || '',
+          department: record.department || '',
+          branch: record.branch || '',
+          month: applyMonth,
+          basicSalary,
+          increaseAmount,
+          grossSalary,
+          allowances: [],
+          deductions: [],
+          totalAllowances: 0,
+          totalDeductions: 0,
+          totalSalary,
+          notes: '',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        });
+      }
+    }
+
+    return { id, ...record, status: 'applied' };
   }
 
   async update(id: string, dto: UpdateSalaryIncreaseDto) {

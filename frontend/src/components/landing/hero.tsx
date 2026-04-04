@@ -3,7 +3,7 @@ import { Button } from '@/components/ui/button';
 import { ArrowRight, CheckCircle2 } from 'lucide-react';
 
 interface HeroProps {
-  onGetStarted: () => void;
+  onGetStarted?: () => void;
 }
 
 export default function Hero({ onGetStarted }: HeroProps) {

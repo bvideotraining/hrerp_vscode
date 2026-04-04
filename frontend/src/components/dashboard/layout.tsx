@@ -24,6 +24,7 @@ import {
   FileBarChart,
   Bell,
   CheckCheck,
+  Code2,
 } from 'lucide-react';
 
 interface Module {
@@ -50,6 +51,7 @@ const modules: Module[] = [
   { id: 10, moduleId: 'cms',                name: 'Website CMS',       icon: Globe,       color: 'bg-indigo-100', href: '/dashboard/cms',              description: 'Pages' },
   { id: 11, moduleId: 'reports',            name: 'Reports',           icon: FileBarChart, color: 'bg-amber-100', href: '/dashboard/reports',          description: 'Employee Reports' },
   { id: 12, moduleId: 'settings',           name: 'Settings',          icon: Settings,    color: 'bg-slate-100',  href: '/dashboard/settings',         description: 'Admin' },
+  { id: 13, moduleId: 'developer',          name: 'Developer',         icon: Code2,       color: 'bg-gray-100',   href: '/developer',                  description: 'System Config' },
 ];
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {

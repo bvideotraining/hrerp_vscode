@@ -1,28 +1,24 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
-// @ts-nocheck
 /**
  * AUTHENTICATION TESTING GUIDE
  * 
  * This file demonstrates how to test the authentication flow
  * between the frontend and backend.
+ * 
+ * NOTE: Auth uses HTTP-only cookies — tokens are managed by the server,
+ * not accessible via JS. Use getMe() to verify session status.
  */
 
 import { backendAuthService } from '@/lib/services/backend-auth.service';
 
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3003';
+
 /**
  * TEST 1: Test Login with Backend API
- * 
- * Run this in browser console:
- * ```javascript
- * import authTest from '@/lib/auth-test'
- * authTest.testLogin()
- * ```
  */
 export async function testLogin() {
   console.log('🔐 Testing Login Flow...');
   
   try {
-    // Test credentials (create this user first via signup or Firebase console)
     const loginPayload = {
       email: 'test@company.com',
       password: 'TestPassword123!',
@@ -34,8 +30,12 @@ export async function testLogin() {
     
     console.log('✅ LOGIN SUCCESS!');
     console.log('📦 Response:', response);
-    console.log('🔑 JWT Token stored:', backendAuthService.getToken());
-    console.log('👤 User data:', backendAuthService.getCurrentUser());
+    // JWT is stored in HTTP-only cookie, not accessible via JS
+    console.log('🔑 Session established (HTTP-only cookie)');
+    
+    // Verify session via getMe
+    const me = await backendAuthService.getMe();
+    console.log('👤 Verified user via getMe():', me);
     
     return response;
   } catch (error) {
@@ -63,7 +63,7 @@ export async function testSignup() {
     
     console.log('✅ SIGNUP SUCCESS!');
     console.log('📦 Response:', response);
-    console.log('🔑 JWT Token stored:', backendAuthService.getToken());
+    console.log('🔑 Session established (HTTP-only cookie)');
     
     return response;
   } catch (error) {
@@ -73,35 +73,25 @@ export async function testSignup() {
 }
 
 /**
- * TEST 3: Test JWT Token validation
+ * TEST 3: Test session validation via getMe
  */
 export async function testJWTValidation() {
-  console.log('🔐 Testing JWT Token Validation...');
+  console.log('🔐 Testing Session Validation...');
   
-  const token = backendAuthService.getToken();
-  
-  if (!token) {
-    console.error('❌ No token found. Login first!');
-    return;
-  }
-
   try {
-    // Decode JWT (without verification - just for inspection)
-    const parts = token.split('.');
-    if (parts.length !== 3) {
-      throw new Error('Invalid JWT format');
+    const me = await backendAuthService.getMe();
+    
+    if (!me) {
+      console.error('❌ No active session. Login first!');
+      return;
     }
 
-    const decoded = JSON.parse(atob(parts[1]));
+    console.log('✅ SESSION VALID!');
+    console.log('👤 Current user:', me);
     
-    console.log('✅ JWT TOKEN VALID!');
-    console.log('📋 Token Payload:', decoded);
-    console.log('⏰ Expires at:', new Date(decoded.exp * 1000));
-    console.log('🔑 Token type:', decoded.type);
-    
-    return decoded;
+    return me;
   } catch (error) {
-    console.error('❌ JWT VALIDATION FAILED:', error);
+    console.error('❌ SESSION VALIDATION FAILED:', error);
     throw error;
   }
 }
@@ -113,23 +103,29 @@ export async function testProtectedEndpoint() {
   console.log('🔐 Testing Protected Endpoint...');
   
   try {
-    const token = backendAuthService.getToken();
-    
-    if (!token) {
-      throw new Error('No token - login first!');
+    // Verify session exists first
+    const me = await backendAuthService.getMe();
+    if (!me) {
+      throw new Error('No active session - login first!');
     }
 
-    console.log('📤 Calling /api/employees with JWT token...');
+    console.log('📤 Calling /api/employees with session cookie...');
     
-    const response = await backendAuthService.authenticatedRequest(
-      '/api/employees',
-      { method: 'GET' }
-    );
+    const response = await fetch(`${API_URL}/api/employees`, {
+      method: 'GET',
+      credentials: 'include',
+    });
+    
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+    
+    const data = await response.json();
     
     console.log('✅ PROTECTED ENDPOINT SUCCESS!');
-    console.log('📦 Response:', response);
+    console.log('📦 Response:', data);
     
-    return response;
+    return data;
   } catch (error) {
     console.error('❌ PROTECTED ENDPOINT FAILED:', error);
     throw error;
@@ -137,53 +133,41 @@ export async function testProtectedEndpoint() {
 }
 
 /**
- * TEST 5: Test Token Expiration
+ * TEST 5: Test Session Expiration
  */
 export async function testTokenExpiration() {
-  console.log('⏱️ Testing Token Expiration...');
+  console.log('⏱️ Testing Session Status...');
   
-  const token = backendAuthService.getToken();
-  
-  if (!token) {
-    console.error('❌ No token found');
-    return;
-  }
-
   try {
-    const parts = token.split('.');
-    const decoded = JSON.parse(atob(parts[1]));
+    const me = await backendAuthService.getMe();
     
-    const expiryTime = decoded.exp * 1000; // Convert to milliseconds
-    const now = Date.now();
-    const timeUntilExpiry = expiryTime - now;
-    
-    if (timeUntilExpiry < 0) {
-      console.warn('⚠️ TOKEN ALREADY EXPIRED');
-    } else {
-      const hoursLeft = (timeUntilExpiry / (1000 * 60 * 60)).toFixed(2);
-      console.log(`⏰ Token expires in: ${hoursLeft} hours`);
+    if (!me) {
+      console.warn('⚠️ No active session (expired or not logged in)');
+      return { active: false };
     }
-    
-    return { expiryTime, timeUntilExpiry };
+
+    console.log('✅ Session is active');
+    console.log('👤 User:', me.email);
+    return { active: true, user: me };
   } catch (error) {
-    console.error('❌ Token expiration check failed:', error);
+    console.error('❌ Session check failed:', error);
   }
 }
 
 /**
  * TEST 6: Test Logout
  */
-export function testLogout() {
+export async function testLogout() {
   console.log('🔐 Testing Logout...');
   
-  console.log('Token before logout:', backendAuthService.getToken());
-  console.log('User before logout:', backendAuthService.getCurrentUser());
+  const meBefore = await backendAuthService.getMe();
+  console.log('User before logout:', meBefore);
   
-  backendAuthService.logout();
+  await backendAuthService.logout();
   
+  const meAfter = await backendAuthService.getMe();
   console.log('✅ LOGOUT SUCCESS!');
-  console.log('Token after logout:', backendAuthService.getToken());
-  console.log('User after logout:', backendAuthService.getCurrentUser());
+  console.log('User after logout:', meAfter);
 }
 
 /**
@@ -197,12 +181,12 @@ export async function runFullAuthTestSuite() {
     console.log('\n=== TEST 1: SIGNUP ===');
     await testSignup();
     
-    // Test 2: JWT Validation
-    console.log('\n=== TEST 2: JWT VALIDATION ===');
+    // Test 2: Session Validation
+    console.log('\n=== TEST 2: SESSION VALIDATION ===');
     await testJWTValidation();
     
-    // Test 3: Token Expiration
-    console.log('\n=== TEST 3: TOKEN EXPIRATION ===');
+    // Test 3: Session Status
+    console.log('\n=== TEST 3: SESSION STATUS ===');
     await testTokenExpiration();
     
     // Test 4: Protected Endpoint
@@ -211,7 +195,7 @@ export async function runFullAuthTestSuite() {
     
     // Test 5: Logout
     console.log('\n=== TEST 5: LOGOUT ===');
-    testLogout();
+    await testLogout();
     
     console.log('\n✅ ALL TESTS COMPLETED SUCCESSFULLY!');
   } catch (error) {

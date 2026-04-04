@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback, useRef } from 'react';
-import { salaryConfigService, salaryIncreasesService } from '@/lib/services/salary-config.service';
+import { salaryConfigService } from '@/lib/services/salary-config.service';
 import type {
   SalaryConfig,
   SalaryLineItem,
@@ -121,7 +121,6 @@ export function useSalaryConfig() {
   const [deleting, setDeleting] = useState(false);
   const [importingAllowances, setImportingAllowances] = useState(false);
   const [importingDeductions, setImportingDeductions] = useState(false);
-  const [importingIncrease, setImportingIncrease] = useState(false);
 
   const [status, setStatus] = useState<StatusMsg | null>(null);
   const statusTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -222,56 +221,6 @@ export function useSalaryConfig() {
     }
   }, [editor, flash]);
 
-  // ─── Import increase amount from salary increases ──────────────────────
-
-  const importIncreaseAmount = useCallback(async () => {
-    if (!editor) return;
-    setImportingIncrease(true);
-    try {
-      const increases = await salaryIncreasesService.getAll(editor.employeeId);
-      const effective = increases.filter(
-        (r) => (r.applyMonth || '') <= editor.month,
-      );
-      const total = effective.reduce((s, r) => s + (r.increaseAmount || 0), 0);
-
-      if (effective.length === 0) {
-        flash('error', 'No salary increases found for this employee up to the selected month.');
-        return;
-      }
-
-      // Save to Firestore immediately (don’t wait for React state flush)
-      let saved: SalaryConfig;
-      if (editor.configId) {
-        saved = await salaryConfigService.update(editor.configId, { increaseAmount: total });
-      } else {
-        saved = await salaryConfigService.create({
-          employeeId: editor.employeeId,
-          employeeCode: editor.employeeCode,
-          employeeName: editor.employeeName,
-          department: editor.department,
-          branch: editor.branch,
-          month: editor.month,
-          basicSalary: editor.basicSalary,
-          increaseAmount: total,
-          allowances: editor.allowances,
-          deductions: editor.deductions,
-          notes: editor.notes,
-        });
-      }
-
-      setEditor(configToEditor(saved));
-      await loadHistory(editor.month);
-      flash(
-        'success',
-        `Increase amount updated to EGP ${total.toFixed(2)} from ${effective.length} scheduled increase(s) and saved.`,
-      );
-    } catch (e: any) {
-      flash('error', e.message || 'Failed to fetch salary increases');
-    } finally {
-      setImportingIncrease(false);
-    }
-  }, [editor, flash, loadHistory]);
-
   // ─── Import deductions from insurance ──────────────────────────────────
 
   const importDeductions = useCallback(async () => {
@@ -311,7 +260,6 @@ export function useSalaryConfig() {
           branch: editor.branch,
           month,
           basicSalary: editor.basicSalary,
-          increaseAmount: editor.increaseAmount,
           allowances: editor.allowances,
           deductions: editor.deductions,
           notes: editor.notes,
@@ -321,7 +269,6 @@ export function useSalaryConfig() {
         if (editor.configId) {
           const updatePayload: UpdateSalaryConfigPayload = {
             basicSalary: payload.basicSalary,
-            increaseAmount: payload.increaseAmount,
             allowances: payload.allowances,
             deductions: payload.deductions,
             notes: payload.notes,
@@ -369,11 +316,7 @@ export function useSalaryConfig() {
   const editFromHistory = useCallback((cfg: SalaryConfig) => {
     setEditor(configToEditor(cfg));
   }, []);
-  // ─── Clear editor ─────────────────────────────────────────────
 
-  const clearEditor = useCallback(() => {
-    setEditor(null);
-  }, []);
   return {
     // History
     historyRecords,
@@ -385,7 +328,6 @@ export function useSalaryConfig() {
     // Editor
     editor,
     editorLoading,
-    clearEditor,
     selectEmployee,
     setBasicSalary,
     setAllowances,
@@ -395,10 +337,8 @@ export function useSalaryConfig() {
     // Import
     importAllowances,
     importDeductions,
-    importIncreaseAmount,
     importingAllowances,
     importingDeductions,
-    importingIncrease,
 
     // Save / delete
     save,

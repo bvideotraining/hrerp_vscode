@@ -1,17 +1,17 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
+import Link from 'next/link';
 import { ProtectedRoute } from '@/components/auth/protected-route';
 import DashboardLayout from '@/components/dashboard/layout';
 import { useAuth } from '@/context/auth-context';
 import { usePayroll } from '@/hooks/use-payroll';
 import { payrollService } from '@/lib/services/payroll.service';
-import { organizationService, type MonthRange } from '@/lib/services/organization.service';
 import { employeeService } from '@/lib/services/employee.service';
-import type { PayrollRecord, GeneratePayrollPayload, BatchGenerateResult } from '@/types/payroll';
+import type { PayrollRecord, GeneratePayrollPayload, GenerateMode, BatchGeneratePayrollPayload, BatchGenerateResult } from '@/types/payroll';
 import type { Employee } from '@/types/employee';
 import { SalaryConfigSection } from '@/components/payroll/salary-config-section';
-import { SalaryIncreasesSection } from '@/components/payroll/salary-increases-section';
+import { SalaryIncreaseScheduleSection } from '@/components/payroll/salary-increase-schedule-section';
 import { CashAdvancesSection } from '@/components/payroll/cash-advances-section';
 import {
   Banknote,
@@ -31,10 +31,11 @@ import {
   FileText,
   RefreshCw,
   Settings,
-  CreditCard,
   Users,
-  Loader2,
+  User,
 } from 'lucide-react';
+
+const EMPLOYEE_CATEGORIES = ['WhiteCollar', 'BlueCollar', 'Management', 'PartTime'] as const;
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
 
@@ -93,19 +94,23 @@ async function exportDetailExcel(record: PayrollRecord) {
     ['Basic Salary (EGP)', record.basicSalary],
     ['Increase Amount (EGP)', record.increaseAmount],
     ['Gross Salary (EGP)', record.grossSalary],
-    ['Housing Allowance (EGP)', record.housingAllowance],
-    ['Transportation Allowance (EGP)', record.transportationAllowance],
-    ['Meal Allowance (EGP)', record.mealAllowance],
-    ['Other Allowances (EGP)', record.otherAllowances],
+    ['Saturday Shift (EGP)', record.saturdayShiftAllowance],
+    ['Duty (EGP)', record.dutyAllowance],
+    ['Potty Training (EGP)', record.pottyTrainingAllowance],
+    ['After School (EGP)', record.afterSchoolAllowance],
+    ['Transportation (EGP)', record.transportationAllowance],
+    ['Extra Bonus (EGP)', record.extraBonusAllowance],
+    ['Others (EGP)', record.otherBonusAllowance],
     ['Total Allowances (EGP)', record.totalAllowances],
     ['Bonuses (EGP)', record.bonuses],
+    ['Bonus Notes', record.bonusNotes || ''],
     ['Total Salary (EGP)', record.totalSalary],
     ['', ''],
     ['── DEDUCTIONS ──', ''],
     ['Medical Insurance (EGP)', record.medicalInsurance],
     ['Social Insurance (EGP)', record.socialInsurance],
-    [`Late Deduction (${record.attendanceSummary?.lateMinutes ?? 0} min → ${record.attendanceSummary?.deductionDays ?? 0} days) (EGP)`, record.lateDeduction],
-    [`Absence Deduction (${record.leaveSummary?.unpaidDays ?? 0} unpaid leave + ${record.attendanceSummary?.absenceDays ?? 0} absent days) (EGP)`, record.absenceDeduction],
+    [`Late Deduction (${record.attendanceSummary?.lateMinutes ?? 0} min / ${record.attendanceSummary?.deductionDays ?? 0} days) (EGP)`, record.lateDeduction],
+    [`Absence Deduction (${record.leaveSummary?.unpaidDays ?? 0} unpaid days) (EGP)`, record.absenceDeduction],
     ['Cash Advance (EGP)', record.cashAdvance],
     ['Total Deductions (EGP)', record.totalDeductions],
     ['', ''],
@@ -154,19 +159,23 @@ async function exportDetailPDF(record: PayrollRecord) {
       ['Basic Salary', fmtAmt(record.basicSalary)],
       ['Increase Amount', fmtAmt(record.increaseAmount)],
       ['Gross Salary  (Basic + Increase)', fmtAmt(record.grossSalary)],
-      ['Housing Allowance', fmtAmt(record.housingAllowance)],
-      ['Transportation Allowance', fmtAmt(record.transportationAllowance)],
-      ['Meal Allowance', fmtAmt(record.mealAllowance)],
-      ['Other Allowances', fmtAmt(record.otherAllowances)],
+      ['Saturday Shift', fmtAmt(record.saturdayShiftAllowance)],
+      ['Duty', fmtAmt(record.dutyAllowance)],
+      ['Potty Training', fmtAmt(record.pottyTrainingAllowance)],
+      ['After School', fmtAmt(record.afterSchoolAllowance)],
+      ['Transportation', fmtAmt(record.transportationAllowance)],
+      ['Extra Bonus', fmtAmt(record.extraBonusAllowance)],
+      ['Others', fmtAmt(record.otherBonusAllowance)],
       ['Total Allowances', fmtAmt(record.totalAllowances)],
       ['Bonuses', fmtAmt(record.bonuses)],
+      ['Bonus Notes', record.bonusNotes || '—'],
       ['TOTAL SALARY', fmtAmt(record.totalSalary)],
     ],
     headStyles: { fillColor: [21, 128, 61], fontStyle: 'bold' },
     bodyStyles: { fontSize: 9 },
     columnStyles: { 1: { halign: 'right' } },
     didParseCell: (data: any) => {
-      if (data.section === 'body' && data.row.index === 9) {
+      if (data.section === 'body' && data.row.index === 12) {
         data.cell.styles.fontStyle = 'bold';
         data.cell.styles.fillColor = [220, 252, 231];
       }
@@ -184,11 +193,11 @@ async function exportDetailPDF(record: PayrollRecord) {
       ['Medical Insurance', fmtAmt(record.medicalInsurance)],
       ['Social Insurance', fmtAmt(record.socialInsurance)],
       [
-        `Late Deduction  (${record.attendanceSummary?.lateMinutes ?? 0} min → ${record.attendanceSummary?.deductionDays ?? 0} days)`,
+        `Late Deduction  (${record.attendanceSummary?.lateMinutes ?? 0} min / ${record.attendanceSummary?.deductionDays ?? 0} late days)`,
         fmtAmt(record.lateDeduction),
       ],
       [
-        `Absence Deduction  (${record.leaveSummary?.unpaidDays ?? 0} unpaid leave + ${record.attendanceSummary?.absenceDays ?? 0} absent days)`,
+        `Absence Deduction  (${record.leaveSummary?.unpaidDays ?? 0} unpaid days)`,
         fmtAmt(record.absenceDeduction),
       ],
       ['Cash Advance', fmtAmt(record.cashAdvance)],
@@ -489,12 +498,21 @@ function DetailsModal({ record, isAdmin, onClose, onPublishRequest, onDeleteRequ
               <EarningRow label="Basic Salary" amount={record.basicSalary} />
               <EarningRow label="Increase Amount" amount={record.increaseAmount} />
               <EarningRow label="Gross Salary  (Basic + Increase)" amount={record.grossSalary} highlight />
-              <EarningRow label="Housing Allowance" amount={record.housingAllowance} sub />
-              <EarningRow label="Transportation Allowance" amount={record.transportationAllowance} sub />
-              <EarningRow label="Meal Allowance" amount={record.mealAllowance} sub />
-              <EarningRow label="Other Allowances" amount={record.otherAllowances} sub />
+              <EarningRow label="Saturday Shift" amount={record.saturdayShiftAllowance} sub />
+              <EarningRow label="Duty" amount={record.dutyAllowance} sub />
+              <EarningRow label="Potty Training" amount={record.pottyTrainingAllowance} sub />
+              <EarningRow label="After School" amount={record.afterSchoolAllowance} sub />
+              <EarningRow label="Transportation" amount={record.transportationAllowance} sub />
+              <EarningRow label="Extra Bonus" amount={record.extraBonusAllowance} sub />
+              <EarningRow label="Others" amount={record.otherBonusAllowance} sub />
               <EarningRow label="Total Allowances" amount={record.totalAllowances} />
               <EarningRow label="Bonuses" amount={record.bonuses} />
+              {record.bonusNotes && (
+                <div className="flex justify-between items-center py-1.5 text-xs text-slate-500 border-b border-slate-50">
+                  <span className="text-slate-400">Notes</span>
+                  <span className="italic">{record.bonusNotes}</span>
+                </div>
+              )}
               <EarningRow label="Total Salary  (Gross + Allowances + Bonuses)" amount={record.totalSalary} highlight />
             </div>
           </div>
@@ -509,17 +527,14 @@ function DetailsModal({ record, isAdmin, onClose, onPublishRequest, onDeleteRequ
               <DeductRow label="Medical Insurance" amount={record.medicalInsurance} />
               <DeductRow label="Social Insurance" amount={record.socialInsurance} />
               <DeductRow
-                label={`Late Deduction  (${record.attendanceSummary?.lateMinutes ?? 0} min → ${record.attendanceSummary?.deductionDays ?? 0} days)`}
+                label={`Late Deduction  (${record.attendanceSummary?.lateMinutes ?? 0} min / ${record.attendanceSummary?.deductionDays ?? 0} days)`}
                 amount={record.lateDeduction}
               />
               <DeductRow
-                label={`Absence Deduction  (${record.leaveSummary?.unpaidDays ?? 0} unpaid leave + ${record.attendanceSummary?.absenceDays ?? 0} absent days)`}
+                label={`Absence Deduction  (${record.leaveSummary?.unpaidDays ?? 0} unpaid days)`}
                 amount={record.absenceDeduction}
               />
-              <DeductRow
-                label="Cash Advance"
-                amount={record.cashAdvance}
-              />
+              <DeductRow label="Cash Advance" amount={record.cashAdvance} />
               <DeductRow label="Total Deductions" amount={record.totalDeductions} highlight />
             </div>
           </div>
@@ -607,217 +622,15 @@ function DetailsModal({ record, isAdmin, onClose, onPublishRequest, onDeleteRequ
   );
 }
 
-// ─── Batch Generate Modal ─────────────────────────────────────────────────
+// ─── Generate Payroll Modal ────────────────────────────────────────────────
 
-interface BatchGenerateModalProps {
-  onClose: () => void;
-  onGenerated: (result: BatchGenerateResult, payrollMonth: string) => void;
-}
-
-function BatchGenerateModal({ onClose, onGenerated }: BatchGenerateModalProps) {
-  const [monthRanges, setMonthRanges] = useState<MonthRange[]>([]);
-  const [selectedRangeId, setSelectedRangeId] = useState('');
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
-
-  useEffect(() => {
-    organizationService.getMonthRanges()
-      .then((ranges) => {
-        setMonthRanges(ranges);
-        if (ranges.length > 0 && ranges[0].id) setSelectedRangeId(ranges[0].id);
-      })
-      .catch(() => setError('Failed to load month ranges'))
-      .finally(() => setLoading(false));
-  }, []);
-
-  async function handleGenerate() {
-    if (!selectedRangeId) { setError('Please select a month range.'); return; }
-    setError('');
-    setSaving(true);
-    try {
-      const result = await payrollService.generateBatch(selectedRangeId);
-      const range = monthRanges.find((r) => r.id === selectedRangeId);
-      const payrollMonth = range ? range.endDate.substring(0, 7) : '';
-      onGenerated(result, payrollMonth);
-    } catch (e: any) {
-      setError(e.message || 'Failed to generate batch payroll');
-      setSaving(false);
-    }
-  }
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-md flex flex-col overflow-hidden">
-
-        {/* Header */}
-        <div className="bg-slate-900 px-6 py-4 flex items-center justify-between shrink-0">
-          <div>
-            <h3 className="text-sm font-bold text-white uppercase tracking-widest">Generate Payroll</h3>
-            <p className="text-xs text-slate-400 mt-0.5">Batch-calculate salaries for all employees in a period</p>
-          </div>
-          <button onClick={onClose} disabled={saving} className="p-1.5 text-slate-400 hover:text-white rounded transition-colors disabled:opacity-50">
-            <X className="h-5 w-5" />
-          </button>
-        </div>
-
-        {/* Body */}
-        <div className="px-6 py-5 space-y-4">
-          {error && (
-            <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</p>
-          )}
-
-          <div>
-            <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">
-              Month Period *
-            </label>
-            {loading ? (
-              <div className="flex items-center gap-2 text-sm text-slate-400 py-2">
-                <Loader2 className="h-4 w-4 animate-spin" />
-                Loading month ranges…
-              </div>
-            ) : monthRanges.length === 0 ? (
-              <p className="text-sm text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-                No month ranges configured. Please set them up in the Organization module first.
-              </p>
-            ) : (
-              <select
-                value={selectedRangeId}
-                onChange={(e) => setSelectedRangeId(e.target.value)}
-                className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
-              >
-                <option value="">Select month range…</option>
-                {monthRanges.map((r) => (
-                  <option key={r.id} value={r.id ?? ''}>
-                    {r.monthName} ({r.startDate} → {r.endDate})
-                  </option>
-                ))}
-              </select>
-            )}
-          </div>
-
-          <div className="bg-blue-50 border border-blue-100 rounded-lg px-4 py-3 text-xs text-blue-700 space-y-1">
-            <p className="font-semibold">Batch scope</p>
-            <ul className="list-disc list-inside space-y-0.5">
-              <li>Only employees <strong>with a salary config</strong> for the selected period will be processed.</li>
-              <li>Already-<strong>published</strong> records will be skipped.</li>
-              <li>Failures are reported individually — the batch continues for all other employees.</li>
-            </ul>
-          </div>
-        </div>
-
-        {/* Footer */}
-        <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex justify-between items-center shrink-0">
-          <button onClick={onClose} disabled={saving} className="px-5 py-2 text-sm text-slate-500 hover:text-slate-800 disabled:opacity-50">
-            Cancel
-          </button>
-          <button
-            onClick={handleGenerate}
-            disabled={saving || loading || !selectedRangeId}
-            className="flex items-center gap-2 px-6 py-2.5 bg-slate-900 text-white rounded-lg hover:bg-slate-800 text-sm font-semibold disabled:opacity-50 transition-colors"
-          >
-            {saving ? (
-              <>
-                <Loader2 className="h-4 w-4 animate-spin" />
-                Generating…
-              </>
-            ) : (
-              <>
-                <Users className="h-4 w-4" />
-                Generate for All Employees
-              </>
-            )}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ─── Batch Result Modal ────────────────────────────────────────────────────
-
-interface BatchResultModalProps {
-  result: BatchGenerateResult;
-  onClose: () => void;
-}
-
-function BatchResultModal({ result, onClose }: BatchResultModalProps) {
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg flex flex-col overflow-hidden">
-
-        {/* Header */}
-        <div className="bg-slate-900 px-6 py-4 flex items-center justify-between shrink-0">
-          <div>
-            <h3 className="text-sm font-bold text-white uppercase tracking-widest">Batch Generation Result</h3>
-            <p className="text-xs text-slate-400 mt-0.5">
-              {result.period.monthName} &mdash; {result.period.startDate} → {result.period.endDate}
-            </p>
-          </div>
-          <button onClick={onClose} className="p-1.5 text-slate-400 hover:text-white rounded transition-colors">
-            <X className="h-5 w-5" />
-          </button>
-        </div>
-
-        {/* Body */}
-        <div className="overflow-y-auto flex-1 px-6 py-5 space-y-4 max-h-[60vh]">
-
-          {/* Summary cards */}
-          <div className="grid grid-cols-3 gap-3">
-            <div className="bg-green-50 border border-green-100 rounded-lg p-3 text-center">
-              <p className="text-2xl font-bold text-green-700">{result.succeeded.length}</p>
-              <p className="text-xs text-green-600 font-semibold mt-0.5">Succeeded</p>
-            </div>
-            <div className="bg-amber-50 border border-amber-100 rounded-lg p-3 text-center">
-              <p className="text-2xl font-bold text-amber-700">{result.skipped.length}</p>
-              <p className="text-xs text-amber-600 font-semibold mt-0.5">Skipped (Published)</p>
-            </div>
-            <div className="bg-red-50 border border-red-100 rounded-lg p-3 text-center">
-              <p className="text-2xl font-bold text-red-700">{result.failed.length}</p>
-              <p className="text-xs text-red-600 font-semibold mt-0.5">Failed</p>
-            </div>
-          </div>
-
-          {result.failed.length > 0 && (
-            <div>
-              <h4 className="text-xs font-semibold text-red-600 uppercase tracking-wide mb-2">Failed Employees</h4>
-              <div className="border border-red-100 rounded-lg overflow-hidden">
-                {result.failed.map((f, i) => (
-                  <div
-                    key={f.employeeId}
-                    className={`px-4 py-2.5 text-sm ${i < result.failed.length - 1 ? 'border-b border-red-50' : ''}`}
-                  >
-                    <span className="font-medium text-slate-800">{f.employeeName}</span>
-                    <span className="text-slate-400 ml-2 text-xs">({f.employeeId})</span>
-                    <p className="text-xs text-red-600 mt-0.5">{f.error}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {result.skipped.length > 0 && (
-            <p className="text-xs text-slate-500">
-              {result.skipped.length} employee{result.skipped.length !== 1 ? 's' : ''} skipped because their payroll is already published for this period.
-            </p>
-          )}
-        </div>
-
-        {/* Footer */}
-        <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex justify-end shrink-0">
-          <button
-            onClick={onClose}
-            className="px-6 py-2.5 bg-slate-900 text-white rounded-lg hover:bg-slate-800 text-sm font-semibold transition-colors"
-          >
-            Close
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ─── Generate Payroll Modal (single employee — kept for reference) ─────────
+const MODE_OPTIONS: { value: GenerateMode; label: string; desc: string }[] = [
+  { value: 'single',     label: 'Single Employee',          desc: 'Generate payroll for one specific employee' },
+  { value: 'all',        label: 'All Employees',            desc: 'Generate payroll for every active employee' },
+  { value: 'branch',     label: 'By Branch',                desc: 'Generate for all employees in selected branch(es)' },
+  { value: 'categories', label: 'By Category',              desc: 'Generate for all employees of selected category(ies)' },
+  { value: 'mix',        label: 'Branch + Category (Mix)',  desc: 'Intersect branch AND category filters' },
+];
 
 interface GenerateModalProps {
   employees: Employee[];
@@ -826,30 +639,73 @@ interface GenerateModalProps {
 }
 
 function GenerateModal({ employees, onClose, onGenerated }: GenerateModalProps) {
+  const [mode, setMode] = useState<GenerateMode>('single');
   const [employeeId, setEmployeeId] = useState('');
   const [payrollMonth, setPayrollMonth] = useState(currentMonthValue());
   const [overrideBasicSalary, setOverrideBasicSalary] = useState('');
   const [notes, setNotes] = useState('');
+  const [selectedBranches, setSelectedBranches] = useState<string[]>([]);
+  const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [batchResult, setBatchResult] = useState<BatchGenerateResult | null>(null);
+
+  // Derive unique branches from loaded employees
+  const branchOptions = Array.from(new Set(employees.map((e) => e.branch).filter(Boolean))).sort();
+
+  function toggleBranch(b: string) {
+    setSelectedBranches((prev) => prev.includes(b) ? prev.filter((x) => x !== b) : [...prev, b]);
+  }
+
+  function toggleCategory(c: string) {
+    setSelectedCategories((prev) => prev.includes(c) ? prev.filter((x) => x !== c) : [...prev, c]);
+  }
 
   async function handleGenerate() {
-    if (!employeeId) { setError('Please select an employee.'); return; }
+    setError('');
     if (!payrollMonth || !/^\d{4}-\d{2}$/.test(payrollMonth)) {
-      setError('Payroll month must be in YYYY-MM format (e.g. 2026-03).');
+      setError('Payroll month must be in YYYY-MM format.'); return;
+    }
+
+    if (mode === 'single') {
+      if (!employeeId) { setError('Please select an employee.'); return; }
+      setSaving(true);
+      try {
+        const payload: GeneratePayrollPayload = {
+          employeeId,
+          payrollMonth,
+          ...(overrideBasicSalary ? { overrideBasicSalary: parseFloat(overrideBasicSalary) } : {}),
+          ...(notes.trim() ? { notes: notes.trim() } : {}),
+        };
+        await payrollService.generate(payload);
+        onGenerated();
+      } catch (e: any) {
+        setError(e.message || 'Failed to generate payroll');
+      } finally {
+        setSaving(false);
+      }
       return;
     }
-    setError('');
+
+    // Batch modes
+    if ((mode === 'branch' || mode === 'mix') && selectedBranches.length === 0) {
+      setError('Please select at least one branch.'); return;
+    }
+    if ((mode === 'categories' || mode === 'mix') && selectedCategories.length === 0) {
+      setError('Please select at least one category.'); return;
+    }
+
     setSaving(true);
     try {
-      const payload: GeneratePayrollPayload = {
-        employeeId,
+      const payload: BatchGeneratePayrollPayload = {
+        mode,
         payrollMonth,
-        ...(overrideBasicSalary ? { overrideBasicSalary: parseFloat(overrideBasicSalary) } : {}),
+        ...(selectedBranches.length ? { branches: selectedBranches } : {}),
+        ...(selectedCategories.length ? { categories: selectedCategories } : {}),
         ...(notes.trim() ? { notes: notes.trim() } : {}),
       };
-      await payrollService.generate(payload);
-      onGenerated();
+      const result = await payrollService.generateBatchFiltered(payload);
+      setBatchResult(result);
     } catch (e: any) {
       setError(e.message || 'Failed to generate payroll');
     } finally {
@@ -857,15 +713,73 @@ function GenerateModal({ employees, onClose, onGenerated }: GenerateModalProps) 
     }
   }
 
+  // After a successful batch — show summary
+  if (batchResult) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+        <div className="bg-white rounded-xl shadow-2xl w-full max-w-md flex flex-col overflow-hidden">
+          <div className="bg-slate-900 px-6 py-4 flex items-center justify-between shrink-0">
+            <div>
+              <h3 className="text-sm font-bold text-white uppercase tracking-widest">Batch Complete</h3>
+              <p className="text-xs text-slate-400 mt-0.5">{monthLabel(batchResult.payrollMonth)}</p>
+            </div>
+            <button onClick={onClose} className="p-1.5 text-slate-400 hover:text-white rounded transition-colors">
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+          <div className="px-6 py-5 space-y-3">
+            <div className="flex items-center gap-3 p-3 bg-green-50 border border-green-200 rounded-lg">
+              <CheckCircle className="h-5 w-5 text-green-600 shrink-0" />
+              <div>
+                <p className="text-sm font-semibold text-green-800">Generated: {batchResult.succeeded.length}</p>
+                <p className="text-xs text-green-600">Draft payroll records created / updated</p>
+              </div>
+            </div>
+            {batchResult.skipped.length > 0 && (
+              <div className="flex items-center gap-3 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0" />
+                <div>
+                  <p className="text-sm font-semibold text-amber-800">Skipped: {batchResult.skipped.length}</p>
+                  <p className="text-xs text-amber-600">Already published — not overwritten</p>
+                </div>
+              </div>
+            )}
+            {batchResult.failed.length > 0 && (
+              <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
+                <p className="text-sm font-semibold text-red-800 mb-1">Failed: {batchResult.failed.length}</p>
+                <ul className="text-xs text-red-600 space-y-0.5 max-h-32 overflow-y-auto">
+                  {batchResult.failed.map((f) => (
+                    <li key={f.employeeId}>{f.employeeName}: {f.error}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+          <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex justify-end shrink-0">
+            <button
+              onClick={() => { onGenerated(); onClose(); }}
+              className="flex items-center gap-2 px-6 py-2.5 bg-slate-900 text-white rounded-lg hover:bg-slate-800 text-sm font-semibold transition-colors"
+            >
+              <CheckCircle className="h-4 w-4" />
+              Done
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const currentMode = MODE_OPTIONS.find((m) => m.value === mode)!;
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-md flex flex-col overflow-hidden">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg flex flex-col overflow-hidden">
 
         {/* Header */}
         <div className="bg-slate-900 px-6 py-4 flex items-center justify-between shrink-0">
           <div>
             <h3 className="text-sm font-bold text-white uppercase tracking-widest">Generate Payroll</h3>
-            <p className="text-xs text-slate-400 mt-0.5">Calculate and store a monthly salary snapshot</p>
+            <p className="text-xs text-slate-400 mt-0.5">Calculate and store monthly salary records</p>
           </div>
           <button onClick={onClose} className="p-1.5 text-slate-400 hover:text-white rounded transition-colors">
             <X className="h-5 w-5" />
@@ -873,27 +787,27 @@ function GenerateModal({ employees, onClose, onGenerated }: GenerateModalProps) 
         </div>
 
         {/* Body */}
-        <div className="px-6 py-5 space-y-4">
+        <div className="px-6 py-5 space-y-4 overflow-y-auto max-h-[70vh]">
           {error && (
             <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</p>
           )}
 
+          {/* Mode selector */}
           <div>
-            <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Employee *</label>
+            <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Generation Scope *</label>
             <select
-              value={employeeId}
-              onChange={(e) => setEmployeeId(e.target.value)}
+              value={mode}
+              onChange={(e) => { setMode(e.target.value as GenerateMode); setError(''); }}
               className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
             >
-              <option value="">Select Employee…</option>
-              {employees.map((emp) => (
-                <option key={emp.id} value={emp.id}>
-                  {emp.fullName} — {emp.employeeCode}
-                </option>
+              {MODE_OPTIONS.map((m) => (
+                <option key={m.value} value={m.value}>{m.label}</option>
               ))}
             </select>
+            <p className="text-xs text-slate-400 mt-1">{currentMode.desc}</p>
           </div>
 
+          {/* Payroll Month */}
           <div>
             <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Payroll Month *</label>
             <select
@@ -907,22 +821,97 @@ function GenerateModal({ employees, onClose, onGenerated }: GenerateModalProps) 
             </select>
           </div>
 
-          <div>
-            <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">
-              Override Basic Salary (EGP)
-              <span className="ml-1 text-slate-400 font-normal normal-case">(optional — leave blank to use salary config)</span>
-            </label>
-            <input
-              type="number"
-              min={0}
-              step={0.01}
-              placeholder="0.00"
-              value={overrideBasicSalary}
-              onChange={(e) => setOverrideBasicSalary(e.target.value)}
-              className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
-            />
-          </div>
+          {/* Single employee: employee selector + override */}
+          {mode === 'single' && (
+            <>
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Employee *</label>
+                <select
+                  value={employeeId}
+                  onChange={(e) => setEmployeeId(e.target.value)}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
+                >
+                  <option value="">Select Employee…</option>
+                  {employees.map((emp) => (
+                    <option key={emp.id} value={emp.id}>
+                      {emp.fullName} — {emp.employeeCode}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">
+                  Override Basic Salary (EGP)
+                  <span className="ml-1 text-slate-400 font-normal normal-case">(optional)</span>
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  step={0.01}
+                  placeholder="0.00"
+                  value={overrideBasicSalary}
+                  onChange={(e) => setOverrideBasicSalary(e.target.value)}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
+                />
+              </div>
+            </>
+          )}
 
+          {/* Branch selector */}
+          {(mode === 'branch' || mode === 'mix') && (
+            <div>
+              <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">
+                Branch(es) * <span className="font-normal text-slate-400 normal-case">— select one or more</span>
+              </label>
+              {branchOptions.length === 0 ? (
+                <p className="text-sm text-slate-400 italic">No branches found in employee data</p>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {branchOptions.map((b) => (
+                    <button
+                      key={b}
+                      type="button"
+                      onClick={() => toggleBranch(b)}
+                      className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
+                        selectedBranches.includes(b)
+                          ? 'bg-slate-900 text-white border-slate-900'
+                          : 'bg-white text-slate-600 border-slate-300 hover:border-slate-500'
+                      }`}
+                    >
+                      {b}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Category selector */}
+          {(mode === 'categories' || mode === 'mix') && (
+            <div>
+              <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">
+                Category(ies) * <span className="font-normal text-slate-400 normal-case">— select one or more</span>
+              </label>
+              <div className="flex flex-wrap gap-2">
+                {EMPLOYEE_CATEGORIES.map((c) => (
+                  <button
+                    key={c}
+                    type="button"
+                    onClick={() => toggleCategory(c)}
+                    className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
+                      selectedCategories.includes(c)
+                        ? 'bg-slate-900 text-white border-slate-900'
+                        : 'bg-white text-slate-600 border-slate-300 hover:border-slate-500'
+                    }`}
+                  >
+                    {c}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Notes */}
           <div>
             <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">
               Notes <span className="text-slate-400 font-normal normal-case">(optional)</span>
@@ -947,8 +936,8 @@ function GenerateModal({ employees, onClose, onGenerated }: GenerateModalProps) 
             disabled={saving}
             className="flex items-center gap-2 px-6 py-2.5 bg-slate-900 text-white rounded-lg hover:bg-slate-800 text-sm font-semibold disabled:opacity-50 transition-colors"
           >
-            <Banknote className="h-4 w-4" />
-            {saving ? 'Generating…' : 'Generate Payroll'}
+            {mode === 'single' ? <User className="h-4 w-4" /> : <Users className="h-4 w-4" />}
+            {saving ? 'Generating…' : mode === 'single' ? 'Generate Payroll' : 'Generate Batch'}
           </button>
         </div>
       </div>
@@ -959,12 +948,12 @@ function GenerateModal({ employees, onClose, onGenerated }: GenerateModalProps) 
 // ─── Main content ──────────────────────────────────────────────────────────
 
 // ─── Tab definitions ──────────────────────────────────────────────────────
-type PayrollTab = 'summary' | 'salary-config' | 'salary-increases' | 'cash-advances';
+type PayrollTab = 'summary' | 'salary-config' | 'salary-increase-schedule' | 'cash-advances';
 
 const PAYROLL_TABS: { id: PayrollTab; label: string }[] = [
   { id: 'summary', label: 'Payroll Summary' },
   { id: 'salary-config', label: 'Salary Config' },
-  { id: 'salary-increases', label: 'Salary Increases' },
+  { id: 'salary-increase-schedule', label: 'Increase Schedule' },
   { id: 'cash-advances', label: 'Cash in Advance' },
 ];
 
@@ -992,7 +981,6 @@ function PayrollContent() {
 
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [showGenerate, setShowGenerate] = useState(false);
-  const [batchResult, setBatchResult] = useState<BatchGenerateResult | null>(null);
   const [detailRecord, setDetailRecord] = useState<PayrollRecord | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<PayrollRecord | null>(null);
   const [publishTarget, setPublishTarget] = useState<PayrollRecord | null>(null);
@@ -1100,19 +1088,27 @@ function PayrollContent() {
               }`}
             >
               {tab.id === 'salary-config' && <Settings className="h-3.5 w-3.5" />}
-              {tab.id === 'salary-increases' && <TrendingUp className="h-3.5 w-3.5" />}
-              {tab.id === 'cash-advances' && <CreditCard className="h-3.5 w-3.5" />}
+              {tab.id === 'salary-increase-schedule' && <TrendingUp className="h-3.5 w-3.5" />}
+              {tab.id === 'cash-advances' && <Banknote className="h-3.5 w-3.5" />}
               {tab.label}
             </button>
           ))}
+          {/* Config History navigates to a dedicated page */}
+          <Link
+            href="/dashboard/payroll/salary-config-history"
+            className="flex items-center gap-2 px-5 py-2.5 text-sm font-medium border-b-2 border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300 transition-colors whitespace-nowrap"
+          >
+            <Settings className="h-3.5 w-3.5" />
+            Config History
+          </Link>
         </nav>
       </div>
 
       {/* ── Salary Config tab ── */}
       {activeTab === 'salary-config' && <SalaryConfigSection />}
 
-      {/* ── Salary Increases tab ── */}
-      {activeTab === 'salary-increases' && <SalaryIncreasesSection />}
+      {/* ── Increase Schedule tab ── */}
+      {activeTab === 'salary-increase-schedule' && <SalaryIncreaseScheduleSection />}
 
       {/* ── Cash in Advance tab ── */}
       {activeTab === 'cash-advances' && <CashAdvancesSection />}
@@ -1353,24 +1349,10 @@ function PayrollContent() {
 
       {/* ── Modals ── */}
       {showGenerate && admin && (
-        <BatchGenerateModal
+        <GenerateModal
+          employees={employees}
           onClose={() => setShowGenerate(false)}
-          onGenerated={(result, payrollMonth) => {
-            setShowGenerate(false);
-            setBatchResult(result);
-            // Switch filter to the generated payroll month so results are visible
-            if (payrollMonth) {
-              setFilters({ payrollMonth });
-              setLocalMonth(payrollMonth);
-            }
-          }}
-        />
-      )}
-
-      {batchResult && (
-        <BatchResultModal
-          result={batchResult}
-          onClose={() => setBatchResult(null)}
+          onGenerated={() => { setShowGenerate(false); reload(); }}
         />
       )}
 

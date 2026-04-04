@@ -1,6 +1,7 @@
 ﻿'use client';
 
 import { useState, useCallback, useEffect } from 'react';
+import * as XLSX from 'xlsx';
 import { ProtectedRoute } from '@/components/auth/protected-route';
 import DashboardLayout from '@/components/dashboard/layout';
 import { AttendanceFiltersBar } from '@/components/attendance/attendance-filters';
@@ -46,8 +47,11 @@ function AttendancePageContent() {
   const canDelete = canDo('attendance', 'delete');
 
   // Own-scope: restrict to the logged-in employee's records
-  // Own-scope: custom access role + linked to an employee record
-  const isOwnScope = user?.accessType === 'custom' && !!(user?.employeeId);
+  // Roles with elevated scope (branch_approver, approver, etc.) should NOT be own-scope
+  const attRoleKey = (user?.role || '').toLowerCase().replace(/[\s-]+/g, '_');
+  const attHasElevatedScope = ['admin', 'hr_manager', 'approver', 'branch_approver', 'finance_manager', 'supervisor'].includes(attRoleKey)
+    || user?.accessType === 'full';
+  const isOwnScope = user?.accessType === 'custom' && !!(user?.employeeId) && !attHasElevatedScope;
   const ownEmployeeId = isOwnScope ? (user?.employeeId || '') : undefined;
 
   const [records, setRecords] = useState<AttendanceRecord[]>([]);
@@ -86,17 +90,20 @@ function AttendancePageContent() {
 
   async function handleSaveLog(data: AttendanceFormData) {
     setIsSaving(true);
-    if (editRecord) {
-      await updateLog(editRecord.id, data);
-    } else {
-      await createLog(data);
+    try {
+      if (editRecord) {
+        await updateLog(editRecord.id, data);
+      } else {
+        await createLog(data);
+      }
+      setShowAddModal(false);
+      setEditRecord(null);
+      fetchRecords(filters);
+      setSuccessMsg(editRecord ? 'Record updated.' : 'Log added.');
+      setTimeout(() => setSuccessMsg(null), 3000);
+    } finally {
+      setIsSaving(false);
     }
-    setIsSaving(false);
-    setShowAddModal(false);
-    setEditRecord(null);
-    fetchRecords(filters);
-    setSuccessMsg(editRecord ? 'Record updated.' : 'Log added.');
-    setTimeout(() => setSuccessMsg(null), 3000);
   }
 
   async function handleDelete(id: string) {
@@ -130,7 +137,6 @@ function AttendancePageContent() {
       Excuse: r.excuse || '',
       Notes: r.notes || '',
     }));
-    const XLSX = await import('xlsx');
     const ws = XLSX.utils.json_to_sheet(rows);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Attendance');
@@ -162,7 +168,6 @@ function AttendancePageContent() {
     setIsImporting(true);
     try {
       const buffer = await file.arrayBuffer();
-      const XLSX = await import('xlsx');
       const wb = XLSX.read(buffer, { type: 'array' });
       const ws = wb.Sheets[wb.SheetNames[0]];
       const rows: any[] = XLSX.utils.sheet_to_json(ws);

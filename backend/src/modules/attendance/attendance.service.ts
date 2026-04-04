@@ -1,9 +1,17 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
 import { FirebaseService } from '@config/firebase/firebase.service';
 import { OrganizationService } from '@modules/organization/organization.service';
+import { ScopeService } from '@modules/common/scope.service';
 import { CreateAttendanceDto } from './dto/create-attendance.dto';
 import { UpdateAttendanceDto } from './dto/update-attendance.dto';
 import { AttendanceFilterDto } from './dto/attendance-filter.dto';
+
+export interface AttendanceRequestUser {
+  userId: string;
+  role: string;
+  accessType: string;
+  employeeId?: string;
+}
 
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
@@ -12,6 +20,7 @@ export class AttendanceService {
   constructor(
     private firebaseService: FirebaseService,
     private organizationService: OrganizationService,
+    private scopeService: ScopeService,
   ) {}
 
   // ═══ HELPERS ══════════════════════════════════════════════════════════════
@@ -31,7 +40,9 @@ export class AttendanceService {
     category: string,
     rules: any[],
   ): number {
-    const rule = rules.find((r) => r.category === category);
+    const rule = rules.find(
+      (r) => (r.category ?? '').toLowerCase() === (category ?? '').toLowerCase(),
+    );
     if (!rule) return 0;
     if (rule.isFlexible) return 0; // PartTime — manual only
 
@@ -91,7 +102,9 @@ export class AttendanceService {
     } else if (dto.status === 'absent' || dto.status === 'unpaid_leave') {
       deductionDays = 1;
     } else if (lateMinutes > 0) {
-      const rule = rules.find((r) => r.category === dto.category);
+      const rule = rules.find(
+        (r) => (r.category ?? '').toLowerCase() === (dto.category ?? '').toLowerCase(),
+      );
       const schedule = rule?.deductionSchedule || [];
       deductionDays = this.getDeductionDays(lateMinutes, schedule);
     }
@@ -103,6 +116,17 @@ export class AttendanceService {
 
   async create(dto: CreateAttendanceDto, userId: string) {
     const db = this.firebaseService.getFirestore();
+
+    // Duplicate check: same employee + same date
+    const existing = await db.collection('attendance')
+      .where('employeeId', '==', dto.employeeId)
+      .where('date', '==', dto.date)
+      .limit(1)
+      .get();
+    if (!existing.empty) {
+      throw new ConflictException('This log already exists');
+    }
+
     const derived = await this.deriveFields(dto);
 
     const ref = db.collection('attendance').doc();
@@ -118,7 +142,30 @@ export class AttendanceService {
     return { id: ref.id, ...data };
   }
 
-  async findAll(filters?: AttendanceFilterDto) {
+  async findAll(filters?: AttendanceFilterDto, userContext?: AttendanceRequestUser) {
+    // Resolve allowed employee IDs for scoped users
+    let allowedIds: Set<string> | null = null;
+    if (userContext) {
+      const scope = await this.scopeService.resolveScope(
+        userContext.userId,
+        userContext.role,
+        userContext.accessType,
+        userContext.employeeId,
+      );
+      if (scope.isOwnScopeOnly && userContext.employeeId) {
+        // Own-scope: force filter to their own employee record
+        filters = { ...filters, employeeId: userContext.employeeId } as AttendanceFilterDto;
+      } else if (!scope.isAdmin) {
+        // Approver / branch_approver: resolve the allowed employee IDs
+        allowedIds = await this.scopeService.getAllowedEmployeeIds(
+          userContext.userId,
+          userContext.role,
+          userContext.accessType,
+          userContext.employeeId,
+        );
+      }
+    }
+
     const db = this.firebaseService.getFirestore();
     let query: FirebaseFirestore.Query = db.collection('attendance');
 
@@ -162,6 +209,13 @@ export class AttendanceService {
     if (filters?.employeeName) {
       const term = filters.employeeName.toLowerCase();
       records = records.filter((r: any) => r.employeeName?.toLowerCase().includes(term));
+    }
+
+    // Scope enforcement: approver/branch_approver sees only their allowed employees
+    if (allowedIds !== null) {
+      console.log('[AttendanceService] Allowed employee IDs for scope:', Array.from(allowedIds));
+      records = records.filter((r: any) => allowedIds!.has(r.employeeId));
+      console.log('[AttendanceService] Attendance records found after scope filter:', records.length);
     }
 
     // Sort by date descending
@@ -233,7 +287,9 @@ export class AttendanceService {
       } else if (dto.status === 'absent' || dto.status === 'unpaid_leave') {
         deductionDays = 1;
       } else if (lateMinutes > 0) {
-        const rule = rules.find((r) => r.category === dto.category);
+        const rule = rules.find(
+          (r) => (r.category ?? '').toLowerCase() === (dto.category ?? '').toLowerCase(),
+        );
         deductionDays = this.getDeductionDays(lateMinutes, rule?.deductionSchedule || []);
       }
 
@@ -256,7 +312,26 @@ export class AttendanceService {
     return { imported: results.length, records: results };
   }
 
-  async getExportData(filters?: AttendanceFilterDto) {
+  async getExportData(filters?: AttendanceFilterDto, userContext?: AttendanceRequestUser) {
+    // Resolve allowed employee IDs for scoped users (same scope logic as findAll)
+    let allowedIds: Set<string> | null = null;
+    if (userContext) {
+      const scope = await this.scopeService.resolveScope(
+        userContext.userId,
+        userContext.role,
+        userContext.accessType,
+      );
+      if (scope.isOwnScopeOnly && userContext.employeeId) {
+        filters = { ...filters, employeeId: userContext.employeeId } as AttendanceFilterDto;
+      } else if (!scope.isAdmin) {
+        allowedIds = await this.scopeService.getAllowedEmployeeIds(
+          userContext.userId,
+          userContext.role,
+          userContext.accessType,
+        );
+      }
+    }
+
     // Same as findAll but no pagination cap — return everything for export
     const db = this.firebaseService.getFirestore();
     let query: FirebaseFirestore.Query = db.collection('attendance');
@@ -292,6 +367,11 @@ export class AttendanceService {
     if (filters?.employeeName) {
       const term = filters.employeeName.toLowerCase();
       records = records.filter((r: any) => r.employeeName?.toLowerCase().includes(term));
+    }
+
+    // Scope enforcement
+    if (allowedIds !== null) {
+      records = records.filter((r: any) => allowedIds!.has(r.employeeId));
     }
 
     // Ensure ascending date order
