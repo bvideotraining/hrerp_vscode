@@ -10,8 +10,14 @@ import type { WidgetItem } from '@/lib/dashboard-widget-registry';
 import { WIDGET_COMPONENT_MAP, WIDGET_SPAN } from '@/components/dashboard/widgets/index';
 
 /* ─── helpers ───────────────────────────────────────────────────── */
+// Map role variants to their canonical template key
+const ROLE_ALIASES: Record<string, string> = {
+  application_admin: 'admin',
+};
+
 function normalizeRole(r: string | undefined) {
-  return (r || '').toLowerCase().replace(/[\s-]+/g, '_');
+  const raw = (r || '').toLowerCase().replace(/[\s-]+/g, '_');
+  return ROLE_ALIASES[raw] ?? raw;
 }
 
 /* ─── Page wrapper ──────────────────────────────────────────────── */

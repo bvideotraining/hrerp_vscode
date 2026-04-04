@@ -3,6 +3,9 @@
 import { useRef, useCallback, useEffect, useState } from 'react';
 import { RichtextData } from '@/lib/services/cms.service';
 import { cmsService } from '@/lib/services/cms.service';
+import { pixabayService } from '@/lib/services/pixabay.service';
+import type { PixabayHit, PixabayMediaType } from '@/types/pixabay';
+import PixabayMediaPicker from './pixabay-media-picker';
 import {
   Bold,
   Italic,
@@ -28,6 +31,7 @@ import {
   Minus,
   Type,
   Palette,
+  Search,
 } from 'lucide-react';
 
 interface Props {
@@ -47,7 +51,14 @@ const FONT_SIZES = ['1', '2', '3', '4', '5', '6', '7'];
 export default function RichtextBlockEditor({ data, onChange }: Props) {
   const editorRef = useRef<HTMLDivElement>(null);
   const [uploading, setUploading] = useState(false);
+  const [showPixabayPicker, setShowPixabayPicker] = useState(false);
+  const [pixabayAvailable, setPixabayAvailable] = useState(false);
+  const [pixabayTab, setPixabayTab] = useState<PixabayMediaType>('image');
   const initialized = useRef(false);
+
+  useEffect(() => {
+    pixabayService.isAvailable().then(setPixabayAvailable).catch(() => setPixabayAvailable(false));
+  }, []);
 
   useEffect(() => {
     if (editorRef.current && !initialized.current) {
@@ -102,6 +113,19 @@ export default function RichtextBlockEditor({ data, onChange }: Props) {
     if (url) {
       const iframe = `<div style="position:relative;padding-bottom:56.25%;height:0;overflow:hidden;max-width:100%;margin:16px 0"><iframe src="${url}" style="position:absolute;top:0;left:0;width:100%;height:100%" frameborder="0" allowfullscreen></iframe></div>`;
       execCmd('insertHTML', iframe);
+    }
+  };
+
+  const handlePixabaySelect = (url: string, mediaType: PixabayMediaType, _hit: PixabayHit) => {
+    setShowPixabayPicker(false);
+    if (mediaType === 'image') {
+      execCmd('insertImage', url);
+    } else if (mediaType === 'video') {
+      const html = `<div style="margin:16px 0"><video src="${url}" controls style="max-width:100%;border-radius:8px"></video></div>`;
+      execCmd('insertHTML', html);
+    } else {
+      const html = `<div style="margin:16px 0"><audio src="${url}" controls style="width:100%"></audio></div>`;
+      execCmd('insertHTML', html);
     }
   };
 
@@ -250,6 +274,37 @@ export default function RichtextBlockEditor({ data, onChange }: Props) {
           <Video className="h-4 w-4 text-slate-600" />
         </button>
 
+        {pixabayAvailable && (
+          <>
+            <div className="w-px h-6 bg-slate-200 mx-1" />
+            <button
+              type="button"
+              onClick={() => { setPixabayTab('image'); setShowPixabayPicker(true); }}
+              title="Insert Image from Pixabay"
+              className="p-1.5 rounded hover:bg-orange-100 transition-colors"
+            >
+              <ImageIcon className="h-4 w-4 text-orange-500" />
+            </button>
+            <button
+              type="button"
+              onClick={() => { setPixabayTab('video'); setShowPixabayPicker(true); }}
+              title="Insert Video from Pixabay"
+              className="p-1.5 rounded hover:bg-orange-100 transition-colors"
+            >
+              <Video className="h-4 w-4 text-orange-500" />
+            </button>
+            <button
+              type="button"
+              onClick={() => { setPixabayTab('music'); setShowPixabayPicker(true); }}
+              title="Insert Music from Pixabay"
+              className="p-1.5 rounded hover:bg-orange-100 transition-colors"
+            >
+              <Search className="h-3.5 w-3.5 text-orange-500" />
+            </button>
+            <span className="text-[9px] font-bold text-orange-400 uppercase tracking-wide -ml-0.5">Pixabay</span>
+          </>
+        )}
+
         {uploading && (
           <span className="text-xs text-blue-600 ml-2">Uploading image...</span>
         )}
@@ -263,6 +318,15 @@ export default function RichtextBlockEditor({ data, onChange }: Props) {
         suppressContentEditableWarning
         className="min-h-[200px] p-4 prose prose-sm max-w-none focus:outline-none [&_img]:max-w-full [&_img]:rounded-lg [&_img]:my-2 [&_a]:text-blue-600 [&_blockquote]:border-l-4 [&_blockquote]:border-slate-300 [&_blockquote]:pl-4 [&_blockquote]:italic [&_pre]:bg-slate-100 [&_pre]:p-3 [&_pre]:rounded-lg"
       />
+
+      {showPixabayPicker && (
+        <PixabayMediaPicker
+          defaultTab={pixabayTab}
+          title={`Insert ${pixabayTab === 'image' ? 'Image' : pixabayTab === 'video' ? 'Video' : 'Music'} from Pixabay`}
+          onClose={() => setShowPixabayPicker(false)}
+          onSelect={handlePixabaySelect}
+        />
+      )}
     </div>
   );
 }

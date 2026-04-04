@@ -278,6 +278,82 @@ export function ChartHeadcountByDept() {
   );
 }
 
+/* ── Attendance Trend (last 7 days) ─────────────────────────────── */
+export function ChartAttendanceTrend() {
+  interface DayBar { label: string; present: number; absent: number; late: number; }
+  const [bars, setBars] = useState<DayBar[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const today = new Date();
+    const days: string[] = [];
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(today);
+      d.setDate(today.getDate() - i);
+      days.push(d.toISOString().split('T')[0]);
+    }
+    const start = days[0];
+    const end = days[days.length - 1];
+    attendanceService.getAllLogs({ startDate: start, endDate: end, limit: 10000 }).then((logs) => {
+      const data: DayBar[] = days.map((day) => {
+        const dayLogs = logs.filter((l) => l.date === day);
+        return {
+          label: day.slice(5), // MM-DD
+          present: dayLogs.filter((l) => l.status === 'present').length,
+          late: dayLogs.filter((l) => l.status === 'late').length,
+          absent: dayLogs.filter((l) => l.status === 'absent').length,
+        };
+      });
+      setBars(data);
+    }).catch(() => setBars([])).finally(() => setLoading(false));
+  }, []);
+
+  const maxVal = Math.max(...bars.map((b) => b.present + b.late + b.absent), 1);
+
+  return (
+    <ChartCard title="Attendance Trend" subtitle="Last 7 days — Present · Late · Absent">
+      {loading ? (
+        <div className="flex items-end gap-2 h-40">
+          {[...Array(7)].map((_, i) => <div key={i} className="flex-1 bg-slate-100 animate-pulse rounded-t" style={{ height: `${50 + i * 8}%` }} />)}
+        </div>
+      ) : bars.every((b) => b.present + b.late + b.absent === 0) ? (
+        <p className="text-slate-400 text-sm text-center py-10">No attendance data for this period.</p>
+      ) : (
+        <>
+          <div className="flex items-end gap-1.5 h-40">
+            {bars.map((b) => {
+              const total = b.present + b.late + b.absent;
+              const presentH = total > 0 ? ((b.present / maxVal) * 100).toFixed(1) : '0';
+              const lateH = total > 0 ? ((b.late / maxVal) * 100).toFixed(1) : '0';
+              const absentH = total > 0 ? ((b.absent / maxVal) * 100).toFixed(1) : '0';
+              return (
+                <div key={b.label} className="flex-1 flex flex-col items-center gap-1">
+                  <div className="w-full flex flex-col justify-end" style={{ height: '148px' }}>
+                    <div className="w-full flex flex-col-reverse rounded overflow-hidden">
+                      <div className="w-full bg-green-400" style={{ height: `${presentH}%`, minHeight: b.present > 0 ? 3 : 0 }} title={`Present: ${b.present}`} />
+                      <div className="w-full bg-amber-400" style={{ height: `${lateH}%`, minHeight: b.late > 0 ? 3 : 0 }} title={`Late: ${b.late}`} />
+                      <div className="w-full bg-red-400" style={{ height: `${absentH}%`, minHeight: b.absent > 0 ? 3 : 0 }} title={`Absent: ${b.absent}`} />
+                    </div>
+                  </div>
+                  <span className="text-[9px] text-slate-400">{b.label}</span>
+                </div>
+              );
+            })}
+          </div>
+          <div className="flex gap-4 mt-3">
+            {[['bg-green-400', 'Present'], ['bg-amber-400', 'Late'], ['bg-red-400', 'Absent']].map(([color, label]) => (
+              <div key={label} className="flex items-center gap-1.5">
+                <span className={`w-3 h-3 rounded-sm ${color}`} />
+                <span className="text-xs text-slate-500">{label}</span>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+    </ChartCard>
+  );
+}
+
 /* ── Salary Distribution by Branch ─────────────────────────────── */
 export function ChartSalaryDistribution() {
   interface BranchSalary { branch: string; total: number; count: number; }

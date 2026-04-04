@@ -216,7 +216,7 @@ function AttendancePageContent() {
           <p className="text-slate-500 text-sm mt-0.5">Track daily employee check-ins, late minutes &amp; deductions</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          {canCreate && (
+          {canCreate && user?.accessType === 'full' && (
           <button
             onClick={() => setShowImport(true)}
             className="flex items-center gap-2 px-4 py-2 rounded-lg border border-slate-200 bg-white text-sm text-slate-700 hover:bg-slate-50 transition-colors"

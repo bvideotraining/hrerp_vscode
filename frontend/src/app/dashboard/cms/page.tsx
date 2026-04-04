@@ -17,6 +17,7 @@ import {
   ExternalLink,
   Search,
   Settings2,
+  Image as ImageIcon,
 } from 'lucide-react';
 
 export default function CMSPage() {
@@ -109,6 +110,13 @@ function CMSContent() {
           >
             <Settings2 className="h-5 w-5" />
             Menu Style
+          </button>
+          <button
+            onClick={() => router.push('/dashboard/cms/media-library')}
+            className="flex items-center gap-2 px-4 py-2.5 border border-orange-200 bg-orange-50 rounded-lg hover:bg-orange-100 transition-colors font-medium text-orange-700"
+          >
+            <ImageIcon className="h-5 w-5" />
+            Media Library
           </button>
           <button
             onClick={() => router.push('/dashboard/cms/editor')}

@@ -1,5 +1,6 @@
-import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, OnApplicationBootstrap } from '@nestjs/common';
 import { FirebaseService } from '@config/firebase/firebase.service';
+import { NotificationsService } from '@modules/common/notifications.service';
 import { CreateUserDto, UpdateUserDto } from './dto/user.dto';
 import { CreateRoleDto } from './dto/role.dto';
 import { SystemConfigDto } from './dto/config.dto';
@@ -14,8 +15,24 @@ const ALL_COLLECTIONS = [
 ];
 
 @Injectable()
-export class SettingsService {
-  constructor(private firebaseService: FirebaseService) {}
+export class SettingsService implements OnApplicationBootstrap {
+  constructor(
+    private firebaseService: FirebaseService,
+    private notificationsService: NotificationsService,
+  ) {}
+
+  /** Auto-seed notifications for any pending leaves that predate the notification system */
+  async onApplicationBootstrap() {
+    try {
+      const result = await this.syncPendingLeaveNotifications();
+      if (result.created > 0) {
+        console.log(`[Notifications] Seeded ${result.created} notification(s) for existing pending leaves`);
+      }
+    } catch (err) {
+      // Non-critical — don't break startup
+      console.warn('[Notifications] Startup sync failed:', err);
+    }
+  }
 
   // ═══ SYSTEM USERS ══════════════════════════════════════
 
@@ -352,5 +369,45 @@ export class SettingsService {
     // Strip any accidental markdown fences
     const clean = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
     return JSON.parse(clean) as Array<{ widgetId: string; reason: string; priority: 'high' | 'medium' | 'low' }>;
+  }
+
+  /**
+   * Seed notifications for all existing pending leave requests.
+   * Called once to backfill notifications that predate the notification system.
+   */
+  async syncPendingLeaveNotifications(): Promise<{ created: number }> {
+    const db = this.firebaseService.getFirestore();
+
+    // Get all pending leaves
+    const snap = await db.collection('leaves').where('status', '==', 'pending').get();
+    if (snap.empty) return { created: 0 };
+
+    // Get all approver-type user IDs
+    const recipientIds = await this.notificationsService.getUserIdsWithRoleNames([
+      'approver', 'branch approver', 'branch_approver',
+      'admin', 'hr manager', 'hr_manager',
+    ]);
+    if (recipientIds.length === 0) return { created: 0 };
+
+    // Check which leave IDs already have notifications to avoid duplicates
+    const existingSnap = await db.collection('notifications')
+      .where('event', '==', 'leave_created').get();
+    const alreadyNotified = new Set(existingSnap.docs.map((d) => d.data().relatedId));
+
+    let created = 0;
+    for (const leaveDoc of snap.docs) {
+      if (alreadyNotified.has(leaveDoc.id)) continue;
+      const leave = leaveDoc.data() as any;
+      const employeeName = await this.notificationsService.getEmployeeName(leave.employeeId);
+      await this.notificationsService.createNotificationsForUsers(recipientIds, {
+        title: 'Pending Leave Request',
+        message: `${employeeName} has a pending ${leave.leaveType} leave request (${leave.totalDays} day(s))`,
+        moduleId: 'leaves',
+        event: 'leave_created',
+        relatedId: leaveDoc.id,
+      });
+      created += recipientIds.length;
+    }
+    return { created };
   }
 }

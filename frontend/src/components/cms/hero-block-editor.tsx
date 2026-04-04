@@ -1,9 +1,11 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { HeroData } from '@/lib/services/cms.service';
 import { cmsService } from '@/lib/services/cms.service';
-import { Upload, X, ChevronDown, ChevronUp } from 'lucide-react';
+import { Upload, X, ChevronDown, ChevronUp, Search } from 'lucide-react';
+import { pixabayService } from '@/lib/services/pixabay.service';
+import PixabayMediaPicker from './pixabay-media-picker';
 
 const HERO_TEMPLATES = [
   { id: 'centered', label: 'Centered', preview: 'Text centered with CTA button' },
@@ -53,6 +55,12 @@ interface Props {
 export default function HeroBlockEditor({ data, onChange }: Props) {
   const [uploading, setUploading] = useState(false);
   const [stylesOpen, setStylesOpen] = useState(false);
+  const [showPixabayPicker, setShowPixabayPicker] = useState(false);
+  const [pixabayAvailable, setPixabayAvailable] = useState(false);
+
+  useEffect(() => {
+    pixabayService.isAvailable().then(setPixabayAvailable).catch(() => setPixabayAvailable(false));
+  }, []);
 
   const update = (partial: Partial<HeroData>) => {
     onChange({ ...data, ...partial });
@@ -168,6 +176,16 @@ export default function HeroBlockEditor({ data, onChange }: Props) {
               </span>
               <input type="file" accept="image/*" onChange={handleImageUpload} className="hidden" />
             </label>
+            {pixabayAvailable && (
+              <button
+                type="button"
+                onClick={() => setShowPixabayPicker(true)}
+                className="flex items-center gap-2 px-3 py-2 bg-gradient-to-r from-orange-500 to-pink-500 text-white rounded-lg hover:opacity-90 transition-opacity"
+              >
+                <Search className="h-4 w-4" />
+                <span className="text-sm font-medium">Pixabay</span>
+              </button>
+            )}
           </div>
         </div>
       )}
@@ -402,6 +420,19 @@ export default function HeroBlockEditor({ data, onChange }: Props) {
           </div>
         )}
       </div>
+
+      {/* Pixabay Media Picker Modal */}
+      {showPixabayPicker && (
+        <PixabayMediaPicker
+          defaultTab="image"
+          title="Search Pixabay Images"
+          onClose={() => setShowPixabayPicker(false)}
+          onSelect={(url, _mediaType, _hit) => {
+            update({ backgroundImage: url });
+            setShowPixabayPicker(false);
+          }}
+        />
+      )}
     </div>
   );
 }

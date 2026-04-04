@@ -85,6 +85,11 @@ export class SettingsController {
   @Post('notifications')
   createNotification(@Body() body: any) { return this.settingsService.createNotification(body); }
 
+  @Post('notifications/sync-pending-leaves')
+  syncPendingLeaveNotifications() {
+    return this.settingsService.syncPendingLeaveNotifications();
+  }
+
   // ─── System Reset ──────────────────────────────────────
   @Post('reset')
   resetSystem(@Body() dto: ResetSystemDto) { return this.settingsService.resetSystem(dto); }

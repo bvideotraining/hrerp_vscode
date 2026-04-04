@@ -2,6 +2,7 @@ import { Injectable, NotFoundException, ForbiddenException, BadRequestException 
 import { v4 as uuidv4 } from 'uuid';
 import { FirebaseService } from '../../config/firebase/firebase.service';
 import { ScopeService } from '../common/scope.service';
+import { NotificationsService } from '../common/notifications.service';
 import { CreateLeaveDto, UpdateLeaveDto } from './dto/leave.dto';
 import { LeaveBalanceService } from './leave-balance.service';
 import { AttendanceService } from '../attendance/attendance.service';
@@ -27,6 +28,7 @@ export class LeavesService {
     private leaveBalanceService: LeaveBalanceService,
     private attendanceService: AttendanceService,
     private scopeService: ScopeService,
+    private notificationsService: NotificationsService,
   ) {}
 
   async create(dto: CreateLeaveDto, createdBy: string, creatorRole?: string, creatorAccessType?: string, creatorEmployeeId?: string) {
@@ -58,6 +60,28 @@ export class LeavesService {
       updatedAt: new Date(),
     };
     await ref.set(data);
+
+    // Notify all approver-type users and admins about the new leave request
+    try {
+      const employeeName = await this.notificationsService.getEmployeeName(dto.employeeId);
+      const recipientIds = await this.notificationsService.getUserIdsWithRoleNames([
+        'approver', 'branch approver', 'branch_approver',
+        'admin', 'hr manager', 'hr_manager',
+      ]);
+      if (recipientIds.length > 0) {
+        await this.notificationsService.createNotificationsForUsers(recipientIds, {
+          title: 'New Leave Request',
+          message: `${employeeName} has requested ${dto.totalDays} day(s) of ${dto.leaveType} leave`,
+          moduleId: 'leaves',
+          event: 'leave_created',
+          relatedId: ref.id,
+        });
+      }
+    } catch (err) {
+      // Notification failure is non-critical — log but don't throw
+      console.warn('[Leaves] Failed to create notification:', err);
+    }
+
     return { id: ref.id, ...data };
   }
 
@@ -217,6 +241,39 @@ export class LeavesService {
 
     const data = { ...dto, updatedAt: new Date() };
     await db.collection('leaves').doc(id).update(data);
+
+    // Notify employee of approval/rejection
+    try {
+      if (nowApproved) {
+        const employeeUserId = await this.notificationsService.getUserIdForEmployee(existing.employeeId);
+        if (employeeUserId) {
+          await this.notificationsService.createNotification({
+            userId: employeeUserId,
+            title: 'Leave Request Approved',
+            message: `Your ${existing.leaveType} leave request for ${existing.totalDays} day(s) has been approved`,
+            moduleId: 'leaves',
+            event: 'leave_approved',
+            relatedId: id,
+          });
+        }
+      } else if (nowRejected) {
+        const employeeUserId = await this.notificationsService.getUserIdForEmployee(existing.employeeId);
+        if (employeeUserId) {
+          const reason = dto.rejectedReason || 'No reason provided';
+          await this.notificationsService.createNotification({
+            userId: employeeUserId,
+            title: 'Leave Request Rejected',
+            message: `Your ${existing.leaveType} leave request has been rejected. Reason: ${reason}`,
+            moduleId: 'leaves',
+            event: 'leave_rejected',
+            relatedId: id,
+          });
+        }
+      }
+    } catch (err) {
+      // Notification failure is non-critical
+      console.warn('[Leaves] Failed to create notification:', err);
+    }
 
     // Sync leave balance
     const leaveYear = existing.startDate

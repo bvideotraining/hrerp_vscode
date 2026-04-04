@@ -237,7 +237,16 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                               <p className="text-xs text-slate-500 mt-0.5">{n.message}</p>
                               {n.createdAt && (
                                 <p className="text-xs text-slate-400 mt-1">
-                                  {new Date(typeof n.createdAt === 'string' ? n.createdAt : n.createdAt?.seconds * 1000).toLocaleDateString()}
+                                  {(() => {
+                                    const c = n.createdAt as any;
+                                    // Firestore Timestamp serializes as { _seconds, _nanoseconds } in JSON
+                                    const ms = typeof c === 'string'
+                                      ? Date.parse(c)
+                                      : (c?._seconds ?? c?.seconds)
+                                        ? (c._seconds ?? c.seconds) * 1000
+                                        : null;
+                                    return ms ? new Date(ms).toLocaleDateString() : '';
+                                  })()}
                                 </p>
                               )}
                             </div>

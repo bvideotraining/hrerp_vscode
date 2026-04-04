@@ -158,6 +158,64 @@ export function ListPendingLeaves() {
   );
 }
 
+/* ── Late Employees This Month ─────────────────────────────────── */
+export function ListLateEmployees() {
+  const [rows, setRows] = useState<{ name: string; branch: string; incidents: number; totalMins: number }[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    import('@/lib/services/attendance.service').then(({ attendanceService }) => {
+      const now = new Date();
+      const start = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+      const end = now.toISOString().split('T')[0];
+      attendanceService.getAllLogs({ startDate: start, endDate: end, limit: 10000 }).then((logs) => {
+        const map = new Map<string, { name: string; branch: string; incidents: number; totalMins: number }>();
+        for (const l of logs) {
+          const mins = l.lateMinutesOverride ?? l.lateMinutes ?? 0;
+          if (mins <= 0) continue;
+          const cur = map.get(l.employeeId) ?? { name: l.employeeName, branch: l.branch, incidents: 0, totalMins: 0 };
+          cur.incidents += 1;
+          cur.totalMins += mins;
+          map.set(l.employeeId, cur);
+        }
+        const sorted = [...map.values()].sort((a, b) => b.totalMins - a.totalMins).slice(0, 6);
+        setRows(sorted);
+      }).catch(() => setRows([]));
+    }).finally(() => setLoading(false));
+  }, []);
+
+  return (
+    <ListCard title="Late Employees" subtitle="Most late incidents this month">
+      {loading ? (
+        <div className="space-y-3">{[...Array(4)].map((_, i) => <div key={i} className="h-10 bg-slate-100 animate-pulse rounded" />)}</div>
+      ) : rows.length === 0 ? (
+        <div className="flex flex-col items-center justify-center gap-2 py-6 text-slate-400">
+          <Users className="h-8 w-8 opacity-40" />
+          <p className="text-sm">No late incidents this month.</p>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {rows.map((r, i) => (
+            <div key={i} className="flex items-center gap-3 p-2.5 rounded-lg bg-slate-50">
+              <span className="w-6 h-6 rounded-full bg-red-100 text-red-600 text-xs font-bold flex items-center justify-center flex-shrink-0">
+                {i + 1}
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-medium text-slate-800 truncate">{r.name}</p>
+                <p className="text-xs text-slate-500 truncate">{r.branch}</p>
+              </div>
+              <div className="text-right flex-shrink-0">
+                <p className="text-sm font-semibold text-red-600">{r.incidents}x</p>
+                <p className="text-[10px] text-slate-400">{r.totalMins} min</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </ListCard>
+  );
+}
+
 /* ── Quick Actions ──────────────────────────────────────────────── */
 export function QuickActionsWidget() {
   const router = useRouter();

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Users, UserPlus, TrendingDown, Clock, CalendarOff, DollarSign } from 'lucide-react';
+import { Users, UserPlus, TrendingDown, Clock, CalendarOff, DollarSign, AlertTriangle } from 'lucide-react';
 import { useEmployee } from '@/hooks/use-employee';
 import { leavesService } from '@/lib/services/leaves.service';
 import { attendanceService } from '@/lib/services/attendance.service';
@@ -172,6 +172,33 @@ export function KpiOnLeaveToday() {
       icon={CalendarOff}
       iconBg="bg-purple-50"
       iconColor="text-purple-600"
+      loading={count === null}
+    />
+  );
+}
+
+/* ── Late Incidents This Month ─────────────────────────────────── */
+export function KpiLateIncidents() {
+  const [count, setCount] = useState<number | null>(null);
+
+  useEffect(() => {
+    const now = new Date();
+    const startDate = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
+    const endDate = now.toISOString().split('T')[0];
+    attendanceService.getAllLogs({ startDate, endDate, limit: 10000 }).then((logs) => {
+      const n = logs.filter((l) => l.status === 'late').length;
+      setCount(n);
+    }).catch(() => setCount(0));
+  }, []);
+
+  return (
+    <KpiCard
+      title="Late Incidents (Month)"
+      value={count ?? '—'}
+      subtitle="Employees who arrived late"
+      icon={Clock}
+      iconBg="bg-orange-50"
+      iconColor="text-orange-600"
       loading={count === null}
     />
   );

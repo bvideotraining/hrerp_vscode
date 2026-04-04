@@ -6,7 +6,10 @@ import {
   Delete,
   Body,
   Param,
+  Query,
   HttpCode,
+  HttpException,
+  HttpStatus,
   UseGuards,
   UploadedFile,
   UseInterceptors,
@@ -16,11 +19,103 @@ import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { JwtAuthGuard } from '@modules/auth/guards/jwt-auth.guard';
 import { CmsService } from './cms.service';
 import { CreateCmsPageDto, UpdateCmsPageDto, MenuConfigDto } from './dto/cms-page.dto';
+import { PixabayService } from './services/pixabay.service';
+import { FirebasePixabayStorageService } from './services/firebase-pixabay-storage.service';
+import { PixabaySearchParams, SavePixabayItemDto } from './dto/pixabay.dto';
 
 @ApiTags('CMS')
 @Controller('api/cms')
 export class CmsController {
-  constructor(private cmsService: CmsService) {}
+  constructor(
+    private cmsService: CmsService,
+    private pixabayService: PixabayService,
+    private firebasePixabayStorageService: FirebasePixabayStorageService,
+  ) {}
+
+  // ── Pixabay endpoints (placed BEFORE generic routes) ─────────────────
+
+  @Get('pixabay/status')
+  @ApiOperation({ summary: 'Check Pixabay API availability and config' })
+  getPixabayStatus() {
+    return { success: true, data: this.pixabayService.getStatus() };
+  }
+
+  @Post('pixabay/search')
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard)
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Search Pixabay for images, videos, or music' })
+  async searchPixabay(
+    @Body() body: { query: string; page?: number; mediaType?: string; filters?: Partial<PixabaySearchParams> },
+  ) {
+    if (!body.query?.trim()) {
+      throw new HttpException({ success: false, message: 'Please enter a search term' }, HttpStatus.BAD_REQUEST);
+    }
+
+    const params: PixabaySearchParams = {
+      query: body.query.trim(),
+      page: body.page || 1,
+      ...body.filters,
+    };
+
+    try {
+      let result: any;
+      const mediaType = body.mediaType || 'image';
+
+      if (mediaType === 'video') {
+        result = await this.pixabayService.searchVideos(params);
+      } else if (mediaType === 'music') {
+        result = await this.pixabayService.searchMusic(params);
+      } else {
+        result = await this.pixabayService.searchImages(params);
+      }
+
+      return { success: true, data: result };
+    } catch (err: any) {
+      const status = err?.status || 500;
+      throw new HttpException({ success: false, code: err?.code || 'SEARCH_FAILED', message: err?.message || 'Search failed' }, status);
+    }
+  }
+
+  @Post('pixabay/save-item')
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard)
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Download a Pixabay item, optionally compress, and save to Firebase Storage' })
+  async savePixabayItem(@Body() dto: SavePixabayItemDto) {
+    try {
+      const saved = await this.firebasePixabayStorageService.savePixabayItem(dto);
+      return { success: true, data: saved };
+    } catch (err: any) {
+      throw new HttpException({ success: false, message: err?.message || 'Failed to save item' }, HttpStatus.INTERNAL_SERVER_ERROR);
+    }
+  }
+
+  @Get('pixabay/saved-items')
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard)
+  @ApiOperation({ summary: 'Get previously saved Pixabay items from Firebase' })
+  async getSavedPixabayItems(
+    @Query('type') type?: string,
+    @Query('page') page?: string,
+    @Query('perPage') perPage?: string,
+  ) {
+    const result = await this.firebasePixabayStorageService.getSavedItems(
+      type,
+      page ? Number(page) : 1,
+      perPage ? Number(perPage) : 20,
+    );
+    return { success: true, data: result };
+  }
+
+  @Delete('pixabay/saved-items/:id')
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard)
+  @ApiOperation({ summary: 'Delete a saved Pixabay item from Firebase' })
+  async deleteSavedPixabayItem(@Param('id') id: string) {
+    await this.firebasePixabayStorageService.deleteSavedItem(id);
+    return { success: true, message: 'Item deleted' };
+  }
 
   // ── Public endpoints (no auth) ──────────────────────────────────
 

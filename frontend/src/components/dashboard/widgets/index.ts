@@ -8,6 +8,7 @@ import {
   KpiPendingLeaves,
   KpiOnLeaveToday,
   KpiPayrollEstimate,
+  KpiLateIncidents,
 } from './kpi-widgets';
 
 import {
@@ -16,12 +17,14 @@ import {
   ChartBonusesByBranch,
   ChartHeadcountByDept,
   ChartSalaryDistribution,
+  ChartAttendanceTrend,
 } from './chart-widgets';
 
 import {
   ListNewHires,
   ListUpcomingBirthdays,
   ListPendingLeaves,
+  ListLateEmployees,
   QuickActionsWidget,
 } from './list-widgets';
 
@@ -61,6 +64,7 @@ export const WIDGET_COMPONENT_MAP: Record<string, React.ComponentType> = {
   kpi_pending_leaves:    KpiPendingLeaves,
   kpi_on_leave_today:    KpiOnLeaveToday,
   kpi_payroll_estimate:  KpiPayrollEstimate,
+  kpi_late_incidents:    KpiLateIncidents,
   chart_payroll_trend:   ChartPayrollTrend,
   chart_today_attendance: ChartTodayAttendance,
   chart_bonuses_by_branch: ChartBonusesByBranch,
@@ -69,5 +73,7 @@ export const WIDGET_COMPONENT_MAP: Record<string, React.ComponentType> = {
   list_new_hires:        ListNewHires,
   list_upcoming_birthdays: ListUpcomingBirthdays,
   list_pending_leaves:   ListPendingLeaves,
+  list_late_employees:   ListLateEmployees,
+  chart_attendance_trend: ChartAttendanceTrend,
   quick_actions:         QuickActionsWidget,
 };

@@ -284,11 +284,14 @@ export class AuthService {
       } catch { /* non-critical */ }
     }
 
+    // Derive role same way as login: stored role, or derive from accessType
+    const effectiveRole = userData.role || (accessType === 'full' ? 'admin' : 'employee');
+
     return {
       id: resolvedId,
       email: userData.email,
       fullName: userData.fullName || userData.name || '',
-      role: userData.role,
+      role: effectiveRole,
       roleName: roleDoc?.name || userData.roleName || '',
       roleId,
       accessType,

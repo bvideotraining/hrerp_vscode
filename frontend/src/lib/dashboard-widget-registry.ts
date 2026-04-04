@@ -356,6 +356,9 @@ export const DASHBOARD_TEMPLATES: Record<string, string[]> = {
   branch_approver: [
     'kpi_pending_leaves',
     'kpi_on_leave_today',
+    'kpi_late_incidents',
+    'chart_attendance_trend',
+    'list_late_employees',
     'list_pending_leaves',
     'quick_actions',
   ],
