@@ -97,12 +97,19 @@ export interface SetBalancePayload {
 // ─── Service ───────────────────────────────────────────────────────────────────
 
 export const leavesService = {
-  getAll(employeeId?: string, status?: string): Promise<LeaveRequest[]> {
+  getAll(employeeId?: string, status?: string, source?: string): Promise<LeaveRequest[]> {
     const params = new URLSearchParams();
     if (employeeId) params.set('employeeId', employeeId);
     if (status)     params.set('status', status);
+    if (source)     params.set('source', source);
     const qs = params.toString();
     return apiFetch(`/api/leaves${qs ? `?${qs}` : ''}`);
+  },
+
+  getMobileLeaves(status?: string): Promise<LeaveRequest[]> {
+    const params = new URLSearchParams({ source: 'android' });
+    if (status) params.set('status', status);
+    return apiFetch(`/api/leaves?${params.toString()}`);
   },
 
   create(payload: CreateLeavePayload): Promise<LeaveRequest> {

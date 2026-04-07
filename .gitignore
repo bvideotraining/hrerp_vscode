@@ -17,6 +17,15 @@ build/
 *service-account*.json
 *.json.key
 
+# Android sensitive files
+Android/app/google-services.json
+Android/local.properties
+Android/**/*.keystore
+Android/**/*.jks
+Android/app/build/
+Android/.gradle/
+Adroid/
+
 # Logs
 *.log
 npm-debug.log*

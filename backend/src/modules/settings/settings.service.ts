@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ForbiddenException, OnApplicationBootstrap } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, BadRequestException, ConflictException, OnApplicationBootstrap } from '@nestjs/common';
 import { FirebaseService } from '@config/firebase/firebase.service';
 import { NotificationsService } from '@modules/common/notifications.service';
 import { CreateUserDto, UpdateUserDto } from './dto/user.dto';
@@ -44,6 +44,17 @@ export class SettingsService implements OnApplicationBootstrap {
 
   async createUser(dto: CreateUserDto) {
     const db = this.firebaseService.getFirestore();
+
+    // Validate employee code uniqueness if provided
+    if (dto.employeeCode) {
+      const [byCode] = await Promise.all([
+        db.collection('systemUsers').where('employeeCode', '==', dto.employeeCode).limit(1).get(),
+      ]);
+      if (!byCode.empty) {
+        throw new ConflictException(`Employee code '${dto.employeeCode}' is already assigned to another user`);
+      }
+    }
+
     const plain = JSON.parse(JSON.stringify(dto));
     const ref = db.collection('systemUsers').doc();
     const data = { ...plain, createdAt: new Date(), updatedAt: new Date() };
@@ -53,6 +64,26 @@ export class SettingsService implements OnApplicationBootstrap {
 
   async updateUser(id: string, dto: UpdateUserDto) {
     const db = this.firebaseService.getFirestore();
+
+    // Fetch existing user to check if they are missing an employee code
+    const existingDoc = await db.collection('systemUsers').doc(id).get();
+    if (!existingDoc.exists) throw new NotFoundException('User not found');
+    const existingData = existingDoc.data() as any;
+
+    // If the existing user has no employee code, require it on update
+    const existingHasCode = !!(existingData.employeeCode && existingData.employeeCode.trim());
+    if (!existingHasCode && (!dto.employeeCode || !dto.employeeCode.trim())) {
+      throw new BadRequestException('Employee code is required. This user does not have an employee code assigned.');
+    }
+
+    // Validate employee code uniqueness (if being set or changed)
+    if (dto.employeeCode && dto.employeeCode !== existingData.employeeCode) {
+      const byCode = await db.collection('systemUsers').where('employeeCode', '==', dto.employeeCode).limit(1).get();
+      if (!byCode.empty && byCode.docs[0].id !== id) {
+        throw new ConflictException(`Employee code '${dto.employeeCode}' is already assigned to another user`);
+      }
+    }
+
     const plain = JSON.parse(JSON.stringify(dto));
     const data = { ...plain, updatedAt: new Date() };
     await db.collection('systemUsers').doc(id).update(data);

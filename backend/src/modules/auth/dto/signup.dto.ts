@@ -1,5 +1,5 @@
-import { IsEmail, IsString, MinLength } from 'class-validator';
-import { ApiProperty } from '@nestjs/swagger';
+import { IsEmail, IsString, MinLength, IsOptional } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class SignupDto {
   @ApiProperty({ example: 'user@company.com' })
@@ -14,4 +14,14 @@ export class SignupDto {
   @ApiProperty({ example: 'John Doe' })
   @IsString()
   fullName: string;
+
+  @ApiPropertyOptional({ example: 'EMP001' })
+  @IsOptional()
+  @IsString()
+  employeeCode?: string;
+
+  @ApiPropertyOptional({ example: 'firestore-employee-doc-id' })
+  @IsOptional()
+  @IsString()
+  employeeId?: string;
 }

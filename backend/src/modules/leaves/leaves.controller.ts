@@ -37,17 +37,18 @@ export class LeavesController {
 
   @Get()
   @HttpCode(200)
-  @ApiOperation({ summary: 'Get leave requests (filter by employeeId and/or status)' })
+  @ApiOperation({ summary: 'Get leave requests (filter by employeeId and/or status and/or source)' })
   async findAll(
     @Query('employeeId') employeeId?: string,
     @Query('status') status?: string,
+    @Query('source') source?: string,
     @Request() req: any = {},
   ) {
     const role = req.user?.role || '';
     const accessType = req.user?.accessType || '';
     const userId = req.user?.sub || req.user?.id || '';
     const employeeIdFromToken = req.user?.employeeId || '';
-    return this.leavesService.findAll(employeeId, status, role, userId, accessType, employeeIdFromToken);
+    return this.leavesService.findAll(employeeId, status, role, userId, accessType, employeeIdFromToken, source);
   }
 
   @Get(':id')

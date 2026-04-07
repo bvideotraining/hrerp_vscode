@@ -18,11 +18,15 @@ let isInitialized = false;
  */
 async function fetchFirebaseConfigFromApi() {
   try {
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3003';
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 3000);
     const response = await fetch(`${apiUrl}/api/developer/firebase-client-config`, {
       method: 'GET',
       headers: { 'Content-Type': 'application/json' },
+      signal: controller.signal,
     });
+    clearTimeout(timeoutId);
 
     if (!response.ok) {
       console.warn('Failed to fetch Firebase config from API:', response.statusText);
@@ -62,7 +66,12 @@ async function initializeFirebase() {
 
     // Fall back to environment config or demo config
     if (!config) {
-      config = firebaseConfig.apiKey ? firebaseConfig : DEMO_FIREBASE_CONFIG;
+      const envApiKey = firebaseConfig.apiKey;
+      const hasRealEnvConfig = envApiKey &&
+        envApiKey.startsWith('AIzaSy') &&
+        !envApiKey.includes('YOUR_') &&
+        !envApiKey.includes('Demo');
+      config = hasRealEnvConfig ? (firebaseConfig as any) : DEMO_FIREBASE_CONFIG;
     }
 
     try {

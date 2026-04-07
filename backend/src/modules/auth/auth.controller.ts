@@ -1,4 +1,4 @@
-import { Controller, Post, Get, Body, HttpCode, UseGuards, Request, Res } from '@nestjs/common';
+import { Controller, Post, Get, Body, HttpCode, UseGuards, Request, Res, UnauthorizedException, BadRequestException } from '@nestjs/common';
 import { Response } from 'express';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { AuthService } from './auth.service';
@@ -78,5 +78,39 @@ export class AuthController {
   async getMe(@Request() req: any) {
     const userId = req.user?.sub || req.user?.id;
     return this.authService.getProfile(userId);
+  }
+
+  @Post('firebase-token')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Exchange Firebase ID token for system JWT (mobile app)' })
+  async firebaseTokenExchange(
+    @Body() dto: { idToken: string },
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    if (!dto?.idToken) throw new UnauthorizedException('idToken is required');
+    try {
+      const result = await this.authService.exchangeFirebaseToken(dto.idToken);
+      res.cookie('jwtToken', result.accessToken, COOKIE_OPTIONS);
+      // Return token in response body so the Android app can store it
+      // (HTTP-only cookies are inaccessible from native mobile clients)
+      return {
+        success: true,
+        message: 'Token exchanged successfully',
+        data: {
+          jwtToken: result.accessToken,
+          expiresIn: 86400,
+        },
+      };
+    } catch (error: any) {
+      const msg: string = error?.message || 'Authentication failed';
+      // Only mask as 401 when it's a genuinely invalid/expired Firebase token.
+      // For "user not found", surface the real message so clients can act on it.
+      const isTokenError =
+        msg.toLowerCase().includes('firebase') ||
+        msg.toLowerCase().includes('token') ||
+        (error?.code || '').startsWith('auth/');
+      if (isTokenError) throw new UnauthorizedException(msg);
+      throw new BadRequestException(msg);
+    }
   }
 }

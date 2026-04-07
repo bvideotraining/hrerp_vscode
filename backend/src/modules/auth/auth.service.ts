@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, ConflictException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { FirebaseService } from '@config/firebase/firebase.service';
 import { LoginDto } from './dto/login.dto';
@@ -13,39 +13,59 @@ export class AuthService {
   ) {}
 
   async signup(signupDto: SignupDto) {
-    const { email, password, fullName } = signupDto;
+    const { email, password, fullName, employeeCode, employeeId } = signupDto;
 
     try {
-      // Check if user already exists
       const db = this.firebaseService.getFirestore();
+
+      // Check if user already exists by email
       const existingUser = await db.collection('users').where('email', '==', email).get();
-      
       if (!existingUser.empty) {
-        throw new Error('User with this email already exists');
+        throw new ConflictException('User with this email already exists');
       }
 
-      // Generate a unique ID for the user
+      // If an employeeCode is provided, validate it is not already linked to another account
+      if (employeeCode) {
+        const [byCodeUsers, byCodeSys] = await Promise.all([
+          db.collection('users').where('employeeCode', '==', employeeCode).limit(1).get(),
+          db.collection('systemUsers').where('employeeCode', '==', employeeCode).limit(1).get(),
+        ]);
+        if (!byCodeUsers.empty || !byCodeSys.empty) {
+          throw new ConflictException(`An account already exists for employee code '${employeeCode}'`);
+        }
+      }
+
+      if (employeeId) {
+        const [byIdUsers, byIdSys] = await Promise.all([
+          db.collection('users').where('employeeId', '==', employeeId).limit(1).get(),
+          db.collection('systemUsers').where('employeeId', '==', employeeId).limit(1).get(),
+        ]);
+        if (!byIdUsers.empty || !byIdSys.empty) {
+          throw new ConflictException('An account already exists for this employee');
+        }
+      }
+
       const userId = uuidv4();
 
-      // Create user document in Firestore with hashed password equivalent
-      // For now, we'll store password as-is (NOT recommended for production)
-      // In production, use bcryptjs to hash the password
       await db.collection('users').doc(userId).set({
         id: userId,
         email,
         fullName,
-        password, // TODO: Hash this with bcryptjs in production
+        password,
+        employeeCode: employeeCode || '',
+        employeeId: employeeId || '',
         role: 'employee',
         status: 'active',
         createdAt: new Date(),
         updatedAt: new Date(),
       });
 
-      // Generate JWT token
       const accessToken = this.jwtService.sign({
         sub: userId,
         email,
         role: 'employee',
+        employeeId: employeeId || '',
+        employeeCode: employeeCode || '',
       });
 
       return {
@@ -53,6 +73,8 @@ export class AuthService {
         email,
         fullName,
         role: 'employee',
+        employeeId: employeeId || '',
+        employeeCode: employeeCode || '',
         accessToken,
         tokenType: 'Bearer',
       };
@@ -277,10 +299,15 @@ export class AuthService {
     // ── Employee record ────────────────────────────────────
     let employeeId = userData.employeeId || '';
     let employeeCode = userData.employeeCode || '';
-    if (employeeId && !employeeCode) {
+    let jobTitle = '';
+    if (employeeId) {
       try {
         const empDoc = await db.collection('employees').doc(employeeId).get();
-        if (empDoc.exists) employeeCode = (empDoc.data() as any).employeeCode || '';
+        if (empDoc.exists) {
+          const empData = empDoc.data() as any;
+          if (!employeeCode) employeeCode = empData.employeeCode || '';
+          jobTitle = empData.jobTitle || '';
+        }
       } catch { /* non-critical */ }
     }
 
@@ -302,6 +329,103 @@ export class AuthService {
       scopeJobTitles,
       employeeId,
       employeeCode,
+      jobTitle,
+    };
+  }
+
+  /**
+   * Exchange a Firebase ID token for a system JWT.
+   * Used by the Android mobile attendance app after Firebase Auth sign-in.
+   */
+  async exchangeFirebaseToken(idToken: string) {
+    // 1. Verify with Firebase Admin SDK
+    const decoded = await this.firebaseService.verifyIdToken(idToken);
+    const firebaseUid = decoded.uid;
+    const firebaseEmail = decoded.email || '';
+
+    const db = this.firebaseService.getFirestore();
+
+    // 2. Find matching user — check systemUsers first, then users
+    const [sysSnap, usrSnap] = await Promise.all([
+      db.collection('systemUsers').where('email', '==', firebaseEmail).limit(1).get(),
+      db.collection('users').where('email', '==', firebaseEmail).limit(1).get(),
+    ]);
+    const doc = !sysSnap.empty ? sysSnap.docs[0] : !usrSnap.empty ? usrSnap.docs[0] : null;
+    if (!doc) throw new Error('No HR system account linked to this Firebase user');
+
+    const userData = doc.data();
+    const resolvedId = userData.id || doc.id;
+
+    // 3. Role lookup (same logic as login)
+    let permissions: any[] = [];
+    let scopeType: string[] = [];
+    let scopeDepartments: string[] = [];
+    let scopeBranches: string[] = [];
+    let scopeJobTitles: string[] = [];
+    let roleId = userData.roleId || userData.role || '';
+    let accessType = 'custom';
+    const rolesRef = db.collection('roles');
+    let roleDoc: any = null;
+
+    if (roleId) {
+      const byId = await rolesRef.doc(roleId).get();
+      if (byId.exists) {
+        roleDoc = byId.data();
+      } else {
+        const byName = await rolesRef.where('name', '==', roleId).limit(1).get();
+        if (!byName.empty) { roleDoc = byName.docs[0].data(); roleId = byName.docs[0].id; }
+      }
+    }
+    if (!roleDoc && userData.roleName) {
+      const byRoleName = await rolesRef.where('name', '==', userData.roleName).limit(1).get();
+      if (!byRoleName.empty) { roleDoc = byRoleName.docs[0].data(); roleId = byRoleName.docs[0].id; }
+    }
+    if (roleDoc) {
+      permissions = roleDoc.permissions || [];
+      accessType = roleDoc.accessType || 'custom';
+      scopeType = roleDoc.scopeType || [];
+      scopeDepartments = roleDoc.scopeDepartments || [];
+      scopeBranches = roleDoc.scopeBranches || [];
+      scopeJobTitles = roleDoc.scopeJobTitles || [];
+    }
+
+    // 4. Employee record
+    let employeeId = userData.employeeId || '';
+    let employeeCode = userData.employeeCode || '';
+    if (employeeId && !employeeCode) {
+      try {
+        const empDoc = await db.collection('employees').doc(employeeId).get();
+        if (empDoc.exists) employeeCode = (empDoc.data() as any).employeeCode || '';
+      } catch { /* non-critical */ }
+    }
+
+    const effectiveRole = userData.role || (accessType === 'full' ? 'admin' : 'employee');
+    const accessToken = this.jwtService.sign({
+      sub: resolvedId,
+      email: userData.email,
+      role: effectiveRole,
+      accessType,
+      employeeId,
+      employeeCode,
+    });
+
+    return {
+      id: resolvedId,
+      email: userData.email,
+      fullName: userData.fullName || userData.name || '',
+      role: effectiveRole,
+      roleName: roleDoc?.name || userData.roleName || '',
+      roleId,
+      accessType,
+      permissions,
+      scopeType,
+      scopeDepartments,
+      scopeBranches,
+      scopeJobTitles,
+      employeeId,
+      employeeCode,
+      accessToken,
+      tokenType: 'Bearer',
     };
   }
 

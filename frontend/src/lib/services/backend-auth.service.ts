@@ -78,9 +78,19 @@ class BackendAuthService {
   }
 
   async getMe(): Promise<AuthResponse | null> {
-    const response = await fetch(`${API_URL}/api/auth/me`, { credentials: 'include' });
-    if (!response.ok) return null;
-    return response.json();
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000);
+      const response = await fetch(`${API_URL}/api/auth/me`, {
+        credentials: 'include',
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+      if (!response.ok) return null;
+      return response.json();
+    } catch {
+      return null;
+    }
   }
 
   async logout(): Promise<void> {

@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Primary Colors -->
+    <color name="color_primary">#0066CC</color>
+    <color name="color_primary_dark">#004DB3</color>
+    <color name="color_primary_light">#CCDDFF</color>
+
+    <!-- Secondary Colors -->
+    <color name="color_secondary">#FF6B35</color>
+    <color name="color_secondary_dark">#E55000</color>
+    <color name="color_secondary_light">#FFB399</color>
+
+    <!-- Tertiary Colors -->
+    <color name="color_tertiary">#00AA55</color>
+    <color name="color_tertiary_dark">#008844</color>
+    <color name="color_tertiary_light">#99FFCC</color>
+
+    <!-- Status Colors -->
+    <color name="color_success">#4CAF50</color>
+    <color name="color_error">#FF5252</color>
+    <color name="color_warning">#FFC107</color>
+    <color name="color_info">#2196F3</color>
+
+    <!-- UI Colors -->
+    <color name="color_surface">#FFFFFF</color>
+    <color name="color_background">#F5F5F5</color>
+    <color name="color_shadow">#E0E0E0</color>
+    <color name="color_border">#D0D0D0</color>
+
+    <!-- Text Colors -->
+    <color name="color_text_primary">#212121</color>
+    <color name="color_text_secondary">#757575</color>
+    <color name="color_text_hint">#BDBDBD</color>
+    <color name="color_text_white">#FFFFFF</color>
+
+    <!-- Dark Mode Colors -->
+    <color name="color_surface_dark">#121212</color>
+    <color name="color_background_dark">#1E1E1E</color>
+    <color name="color_text_primary_dark">#FFFFFF</color>
+    <color name="color_text_secondary_dark">#B0B0B0</color>
+
+    <!-- Specific UI Element Colors -->
+    <color name="color_checked_in">#4CAF50</color>
+    <color name="color_checked_out">#FF9800</color>
+    <color name="color_pending">#FFA500</color>
+    <color name="color_failed">#DC143C</color>
+    <color name="color_synced">#00AA00</color>
+
+    <!-- Geofence & Location -->
+    <color name="color_geofence_circle">#3F51B5</color>
+    <color name="color_location_pin">#E91E63</color>
+    <color name="color_user_location">#2196F3</color>
+
+    <!-- Launcher -->
+    <color name="ic_launcher_background">#0066CC</color>
+</resources>

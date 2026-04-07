@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Users, UserPlus, TrendingDown, Clock, CalendarOff, DollarSign, AlertTriangle } from 'lucide-react';
+import { Users, UserPlus, TrendingDown, Clock, CalendarOff, DollarSign } from 'lucide-react';
 import { useEmployee } from '@/hooks/use-employee';
 import { leavesService } from '@/lib/services/leaves.service';
 import { attendanceService } from '@/lib/services/attendance.service';

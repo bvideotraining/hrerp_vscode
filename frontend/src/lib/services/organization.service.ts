@@ -32,6 +32,9 @@ export interface Branch {
   code: string;
   name: string;
   isActive?: boolean;
+  latitude?: number;
+  longitude?: number;
+  radius?: number;
 }
 
 export interface Department {

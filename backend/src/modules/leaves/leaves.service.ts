@@ -11,6 +11,24 @@ const ADMIN_ROLES = ['admin', 'hr_manager'];
 const APPROVER_ROLES = ['approver', 'branch_approver'];
 const ALL_PRIVILEGED = [...ADMIN_ROLES, ...APPROVER_ROLES];
 
+/** Serialize a Firestore Timestamp (or Date) field to an ISO string. */
+function toIso(val: any): string {
+  if (!val) return '';
+  if (typeof val.toDate === 'function') return val.toDate().toISOString();
+  if (val instanceof Date) return val.toISOString();
+  if (typeof val === 'string') return val;
+  return '';
+}
+
+/** Normalize a raw Firestore leave document for API responses. */
+function serializeLeave(record: any): any {
+  return {
+    ...record,
+    createdAt: toIso(record.createdAt),
+    updatedAt: toIso(record.updatedAt),
+  };
+}
+
 /** Normalize role strings: "Branch Approver" → "branch_approver" */
 function normalizeRole(role: string): string {
   return (role || '').toLowerCase().replace(/[\s-]+/g, '_');
@@ -36,12 +54,38 @@ export class LeavesService {
       throw new BadRequestException('Medical report attachment is required for sick leave');
     }
 
-    // Scope check: approvers and custom-role users can only create leaves for employees in their scope
+    // Scope check: approvers and custom-role users can only create leaves for employees in their scope.
+    // EXCEPTION: an employee creating a leave for themselves is ALWAYS allowed.
     const normalizedCreatorRole = normalizeRole(creatorRole || '');
+    let isSelfRequest = !!(creatorEmployeeId && dto.employeeId === creatorEmployeeId);
+
+    // Multi-record employees: same person may have multiple employee docs (one per branch).
+    // If exact ID match fails, check if both IDs share the same nationalId or email.
+    if (!isSelfRequest && creatorEmployeeId && dto.employeeId) {
+      try {
+        const db = this.firebaseService.getFirestore();
+        const [creatorDoc, targetDoc] = await Promise.all([
+          db.collection('employees').doc(creatorEmployeeId).get(),
+          db.collection('employees').doc(dto.employeeId).get(),
+        ]);
+        if (creatorDoc.exists && targetDoc.exists) {
+          const creatorData = creatorDoc.data() as any;
+          const targetData = targetDoc.data() as any;
+          const sameNationalId = !!(creatorData.nationalId && creatorData.nationalId === targetData.nationalId);
+          const sameEmail = !!(creatorData.email && creatorData.email === targetData.email);
+          if (sameNationalId || sameEmail) isSelfRequest = true;
+        }
+      } catch {
+        // non-critical — fall through to scope check
+      }
+    }
+
     const needsScopeCheck =
-      normalizedCreatorRole === 'approver' ||
-      normalizedCreatorRole === 'branch_approver' ||
-      creatorAccessType === 'custom';
+      !isSelfRequest && (
+        normalizedCreatorRole === 'approver' ||
+        normalizedCreatorRole === 'branch_approver' ||
+        creatorAccessType === 'custom'
+      );
     if (needsScopeCheck) {
       const allowedIds = await this.scopeService.getAllowedEmployeeIds(createdBy, creatorRole || '', creatorAccessType || '', creatorEmployeeId);
       // allowedIds === null means admin (no restriction); empty Set with no scope means no restriction either
@@ -54,6 +98,7 @@ export class LeavesService {
     const data = {
       ...dto,
       attachments: dto.attachments || [],
+      source: dto.source || 'web',
       status: 'pending',
       createdBy,
       createdAt: new Date(),
@@ -82,7 +127,7 @@ export class LeavesService {
       console.warn('[Leaves] Failed to create notification:', err);
     }
 
-    return { id: ref.id, ...data };
+    return serializeLeave({ id: ref.id, ...data });
   }
 
   /**
@@ -96,6 +141,7 @@ export class LeavesService {
     requesterId?: string,
     accessType?: string,
     requesterEmployeeId?: string,
+    source?: string,
   ) {
     const db = this.firebaseService.getFirestore();
     let query: any;
@@ -105,11 +151,16 @@ export class LeavesService {
       query = db.collection('leaves').orderBy('createdAt', 'desc');
     }
     const snap = await query.get();
-    let records = snap.docs.map((doc: any) => ({ id: doc.id, ...doc.data() })) as any[];
+    let records = snap.docs.map((doc: any) => serializeLeave({ id: doc.id, ...doc.data() })) as any[];
 
     // Filter by status in-memory to avoid composite Firestore indexes
     if (status) {
       records = records.filter((r: any) => r.status === status);
+    }
+
+    // Filter by source (e.g. 'android', 'web')
+    if (source) {
+      records = records.filter((r: any) => r.source === source);
     }
 
     // Application Admin (accessType='full') sees all — no branch filter
@@ -139,10 +190,10 @@ export class LeavesService {
       }
     }
 
-    // Sort in-memory descending by createdAt
+    // Sort in-memory descending by createdAt (now an ISO string after serializeLeave)
     records.sort((a: any, b: any) => {
-      const ta = a.createdAt?._seconds ?? 0;
-      const tb = b.createdAt?._seconds ?? 0;
+      const ta = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const tb = b.createdAt ? new Date(b.createdAt).getTime() : 0;
       return tb - ta;
     });
     return records;
@@ -152,7 +203,7 @@ export class LeavesService {
     const db = this.firebaseService.getFirestore();
     const doc = await db.collection('leaves').doc(id).get();
     if (!doc.exists) throw new NotFoundException('Leave request not found');
-    return { id: doc.id, ...doc.data() };
+    return serializeLeave({ id: doc.id, ...doc.data() });
   }
 
   async update(
@@ -328,7 +379,7 @@ export class LeavesService {
       }
     }
 
-    return { id, ...existing, ...data };
+    return serializeLeave({ id, ...existing, ...data });
   }
 
   async remove(id: string, requesterId: string, requesterRole: string, accessType: string = '') {

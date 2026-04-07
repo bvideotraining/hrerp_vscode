@@ -16,6 +16,7 @@ import { SalaryIncreasesModule } from './modules/salary-increases/salary-increas
 import { PayrollModule } from './modules/payroll/payroll.module';
 import { CashAdvancesModule } from './modules/cash-advances/cash-advances.module';
 import { DeveloperModule } from './modules/developer/developer.module';
+import { MobileAttendanceModule } from './modules/mobile-attendance/mobile-attendance.module';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 
@@ -41,6 +42,7 @@ import { AppService } from './app.service';
     PayrollModule,
     CashAdvancesModule,
     DeveloperModule,
+    MobileAttendanceModule,
   ],
   controllers: [AppController],
   providers: [AppService],

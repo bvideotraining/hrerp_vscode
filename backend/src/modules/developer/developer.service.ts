@@ -267,24 +267,43 @@ export class DeveloperService {
   async getFirebaseClientConfig(): Promise<Record<string, string>> {
     const db = this.firebaseService.getFirestore();
 
+    // Map: Firestore/env key → Firebase config field name
     const clientKeyMap: Record<string, string> = {
-      'NEXT_PUBLIC_FIREBASE_API_KEY':            'apiKey',
-      'NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN':        'authDomain',
-      'NEXT_PUBLIC_FIREBASE_PROJECT_ID':         'projectId',
-      'NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET':     'storageBucket',
+      'NEXT_PUBLIC_FIREBASE_API_KEY':             'apiKey',
+      'NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN':         'authDomain',
+      'NEXT_PUBLIC_FIREBASE_PROJECT_ID':          'projectId',
+      'NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET':      'storageBucket',
       'NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID': 'messagingSenderId',
-      'NEXT_PUBLIC_FIREBASE_APP_ID':             'appId',
+      'NEXT_PUBLIC_FIREBASE_APP_ID':              'appId',
+    };
+
+    // Env-var fallbacks (backend .env uses FIREBASE_WEB_* naming to avoid
+    // exposing NEXT_PUBLIC_ vars server-side by accident)
+    const envFallbackMap: Record<string, string> = {
+      'NEXT_PUBLIC_FIREBASE_API_KEY':             process.env.FIREBASE_WEB_API_KEY             || '',
+      'NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN':         process.env.FIREBASE_WEB_AUTH_DOMAIN         || process.env.FIREBASE_PROJECT_ID ? `${process.env.FIREBASE_PROJECT_ID}.firebaseapp.com` : '',
+      'NEXT_PUBLIC_FIREBASE_PROJECT_ID':          process.env.FIREBASE_WEB_PROJECT_ID          || process.env.FIREBASE_PROJECT_ID || '',
+      'NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET':      process.env.FIREBASE_WEB_STORAGE_BUCKET      || process.env.FIREBASE_STORAGE_BUCKET || '',
+      'NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID': process.env.FIREBASE_WEB_MESSAGING_SENDER_ID || '',
+      'NEXT_PUBLIC_FIREBASE_APP_ID':              process.env.FIREBASE_WEB_APP_ID              || '',
     };
 
     const config: Record<string, string> = {};
 
     for (const [dbKey, configField] of Object.entries(clientKeyMap)) {
+      // 1st priority: Firestore stored value
       const doc = await db.collection(this.RESOURCES_COLLECTION).doc(dbKey).get();
       if (doc.exists) {
         const resource = doc.data() as PlatformResource;
         if (resource.value && resource.value.trim() !== '') {
           config[configField] = resource.value;
+          continue;
         }
+      }
+      // 2nd priority: environment variable fallback
+      const envValue = envFallbackMap[dbKey];
+      if (envValue && envValue.trim() !== '') {
+        config[configField] = envValue;
       }
     }
 

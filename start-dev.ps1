@@ -37,10 +37,18 @@ Write-Host "Backend build OK" -ForegroundColor Green
 # ── Start backend in a new window ─────────────────────────────────────────────
 Write-Host "Starting backend on http://localhost:3003 ..." -ForegroundColor Yellow
 Start-Process powershell -ArgumentList "-NoExit", "-Command", `
-    "Set-Location '$backend'; `$env:PORT=3003; node dist/main.js" `
+    "Set-Location '$backend'; `$env:PORT=3003; npm run start:prod" `
     -WindowStyle Normal
 
 Start-Sleep -Seconds 2
+
+# ── Clear Next.js cache to prevent ChunkLoadError ─────────────────────────────
+Write-Host "Clearing Next.js build cache..." -ForegroundColor Yellow
+$nextCacheDir = Join-Path $frontend ".next"
+if (Test-Path $nextCacheDir) {
+    Remove-Item -Recurse -Force $nextCacheDir
+    Write-Host "Next.js cache cleared." -ForegroundColor Green
+}
 
 # ── Start frontend in a new window ────────────────────────────────────────────
 Write-Host "Starting frontend on http://localhost:3000 ..." -ForegroundColor Yellow

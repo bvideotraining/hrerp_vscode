@@ -22,6 +22,7 @@ function Badge({ active }: { active: boolean }) {
 const EMPTY_FORM: Omit<SystemUser, 'id'> = {
   name: '', email: '', password: '', roleId: '', roleName: '',
   employeeId: '', branchId: '', departmentId: '', phone: '', isActive: true,
+  employeeCode: '',
 };
 
 export default function SystemUsersSection() {
@@ -110,6 +111,11 @@ export default function SystemUsersSection() {
 
   const handleSave = async () => {
     if (!form.name || !form.email || !form.roleId) return;
+    // When editing a user without an employee code, require one
+    if (editing && !(editing as any).employeeCode && !form.employeeCode?.trim()) {
+      alert('Employee code is required for this user.');
+      return;
+    }
     setSaving(true);
     try {
       const roleName = roles.find((r) => r.id === form.roleId)?.name || form.roleId;
@@ -349,6 +355,32 @@ export default function SystemUsersSection() {
                   className="rounded border-slate-300" />
                 <span className="text-sm text-slate-700">Active account</span>
               </label>
+
+              {/* Employee Code — required when editing user without one */}
+              {(editing && !(editing as any).employeeCode) && (
+                <div>
+                  <label className="block text-xs font-medium text-red-600 mb-1">
+                    Employee Code * <span className="text-red-500">(required — this user has no code)</span>
+                  </label>
+                  <input
+                    value={(form as any).employeeCode || ''}
+                    onChange={(e) => setForm({ ...form, employeeCode: e.target.value.toUpperCase() } as any)}
+                    className="w-full px-3 py-2 border border-red-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500 bg-red-50"
+                    placeholder="e.g. EMP001"
+                  />
+                </div>
+              )}
+              {(!editing || (editing as any).employeeCode) && (
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Employee Code</label>
+                  <input
+                    value={(form as any).employeeCode || ''}
+                    onChange={(e) => setForm({ ...form, employeeCode: e.target.value.toUpperCase() } as any)}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="e.g. EMP001"
+                  />
+                </div>
+              )}
             </div>
 
             <div className="flex gap-3 mt-6 pt-4 border-t border-slate-100">

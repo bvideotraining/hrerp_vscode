@@ -30,6 +30,7 @@ export interface SystemUser {
   roleId: string;
   roleName?: string;
   employeeId?: string;
+  employeeCode?: string;
   branchId?: string;
   departmentId?: string;
   phone?: string;

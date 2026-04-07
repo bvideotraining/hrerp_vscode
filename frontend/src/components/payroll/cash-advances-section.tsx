@@ -61,7 +61,7 @@ function currentMonthValue(): string {
   return `${y}-${String(m).padStart(2, '0')}`;
 }
 
-function generateMonthOptions(yearsBack = 0, yearsForward = 2) {
+function generateMonthOptions(_yearsBack = 0, yearsForward = 2) {
   const opts: { value: string; label: string }[] = [];
   // Always start from January 2026
   const start = new Date(2026, 0, 1);

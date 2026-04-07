@@ -52,6 +52,10 @@ export class CreateLeaveDto {
   @ValidateNested({ each: true })
   @Type(() => AttachmentDto)
   attachments?: AttachmentDto[];
+
+  @IsOptional()
+  @IsString()
+  source?: string;
 }
 
 export class UpdateLeaveDto {

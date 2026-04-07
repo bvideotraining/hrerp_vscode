@@ -34,6 +34,10 @@ export class CreateUserDto {
   @IsString()
   employeeId?: string;
 
+  @IsOptional()
+  @IsString()
+  employeeCode?: string;
+
   @IsBoolean()
   isActive: boolean;
 }
@@ -74,6 +78,10 @@ export class UpdateUserDto {
   @IsOptional()
   @IsString()
   employeeId?: string;
+
+  @IsOptional()
+  @IsString()
+  employeeCode?: string;
 
   @IsOptional()
   @IsBoolean()

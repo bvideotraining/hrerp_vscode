@@ -25,6 +25,7 @@ import {
   Bell,
   CheckCheck,
   Code2,
+  Smartphone,
 } from 'lucide-react';
 
 interface Module {
@@ -42,6 +43,7 @@ const modules: Module[] = [
   { id: 1,  moduleId: 'dashboard',          name: 'Dashboard',         icon: BarChart3,   color: 'bg-blue-100',   href: '/dashboard',                  description: 'Analytics & KPIs' },
   { id: 2,  moduleId: 'employees',          name: 'Employees',         icon: Users,       color: 'bg-emerald-100', href: '/dashboard/employees',        description: 'Master Data' },
   { id: 3,  moduleId: 'attendance',         name: 'Attendance',        icon: Clock,       color: 'bg-purple-100', href: '/dashboard/attendance',       description: 'Check-in/out' },
+  { id: 14, moduleId: 'mobile_attendance',  name: 'Mobile Attendance', icon: Smartphone,  color: 'bg-teal-100',   href: '/dashboard/mobile-attendance', description: 'GPS Android app' },
   { id: 4,  moduleId: 'leaves',             name: 'Leaves',            icon: Calendar,    color: 'bg-orange-100', href: '/dashboard/leaves',           description: 'Requests' },
   { id: 5,  moduleId: 'payroll',            name: 'Payroll',           icon: Banknote,    color: 'bg-green-100',  href: '/dashboard/payroll',          description: 'Salary' },
   { id: 6,  moduleId: 'bonuses',            name: 'Bonuses',           icon: Gift,        color: 'bg-pink-100',   href: '/dashboard/bonuses',          description: 'Bonus Tracking' },
